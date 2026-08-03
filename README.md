@@ -289,3 +289,14 @@ This section is authoritative when an older statement elsewhere conflicts with a
 * Validate finite numeric values, bounds, six-holding maximum, allocation total, data-history minimum, path-period budget, tax and cost ranges, rebalancing periods and bands, and leverage-margin compatibility.
 * Place errors beside their controls and summarize them in an `aria-live` region. Use semantic `nav`, `main`, headings, `fieldset`, and `legend`; visible labels and focus indicators; keyboard-operable controls; and status cues that do not rely only on color.
 * Provide a tabular alternative for essential chart values and respect reduced-motion preferences.
+
+## Work-in-Progress Plan
+
+This is a checklist tracking near-term execution, not a spec. It refines steps 1–5 of "Implementation Order" into a stricter test-before-UI sequence — same scope, different order of proof — and defers to "Implementation Order" for everything after. Check items off as they land; do not change scope here without updating the sections above.
+
+- [ ] **Phase 0 — Minimal frontend shell.** Vite app, the three routes, a single **Run** button, and a raw JSON/number dump of the result. No real input form. Purpose: a harness to exercise the backend, not a usable product.
+- [ ] **Phase 1 — Bootstrap engine + portfolio accounting, headless.** Build historical joint bootstrap sampling and the portfolio-accounting loop (weights, contributions, quantile metrics) in `core/` only, with no worker and no UI. Prove correctness with the hand-calculated and statistical Vitest fixtures from "Validation Requirements" — not by looking at a chart.
+- [ ] **Phase 2 — Worker integration.** Move the bootstrap-only runner into the Web Worker: transferable buffers, run IDs, batching, progress, and cancellation. Connect its real output to uPlot on the Phase 0 shell. This proves the browser architecture end-to-end while only one engine depends on it, so integration problems surface early and cheaply.
+- [ ] **Phase 3 — Parametric Student's $t$ engine.** Degrees-of-freedom estimation, covariance repair, Cholesky sampling — reusing the worker plumbing proven in Phase 2 unchanged.
+- [ ] **Phase 4 — Real input/configuration UI.** Replace the minimal shell with the full Portfolio Construction, Simulation and Portfolio Inputs, Execution State, Results, and Validation/Accessibility behavior defined in "Frontend Layout and Interaction Specification."
+- [ ] **Phase 5+ — Remaining scope.** Benchmark comparison, rebalancing, transaction costs, taxes, leverage/margin calls, CSV export, second base currency, and the Markov engine, in the order fixed by "Implementation Order" steps 6–8.
