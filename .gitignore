@@ -3,3 +3,7 @@ __pycache__/
 .ipynb_checkpoints/
 *.parquet
 /data
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
