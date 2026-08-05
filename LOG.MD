@@ -115,3 +115,38 @@ Implemented the framework-independent foundations required before the bootstrap 
 ### Next step
 
 Implement Phase 1.2: the versioned deterministic `xoshiro128**` pseudo-random generator. The bootstrap engine in Phase 1.3 will use it to choose complete aligned historical rows reproducibly.
+
+## 2026-08-05 - Phase 1.2 deterministic PRNG
+
+### Scope completed
+
+Implemented the framework-independent random source required by the historical bootstrap engine:
+
+- Added a local, versioned `xoshiro128**` pseudo-random generator.
+- Expanded every validated unsigned 32-bit seed into four state words with a fixed SplitMix32-style rule.
+- Added unsigned integer, unit-interval uniform, and unbiased bounded-integer draws.
+- Did not add dataset sampling, portfolio accounting, React, workers, or browser randomness.
+
+### Files added
+
+- `src/core/math/random.ts`: exports `XOSHIRO128_STAR_STAR_VERSION` (`xoshiro128**-v1`) and `createXoshiro128StarStar`. The generator uses the seed-expansion rule of adding `0x9e3779b9` before each word, then applying the two MurmurHash3-style mixing multipliers `0x85ebca6b` and `0xc2b2ae35`. It rejects an all-zero expanded state.
+- `src/core/math/random.test.ts`: 16 focused tests for fixed seed vectors, version identity, reproducibility, seed divergence, unsigned and uniform output bounds, bounded row-index bounds, and invalid seed/bound rejection.
+
+### Operational behavior
+
+- `nextUint32()` returns an unsigned integer from 0 through $2^{32}-1$.
+- `nextUniform()` returns `nextUint32() / 2^{32}`, so the result is in $[0,1)$.
+- `nextInt(upperExclusive)` uses rejection sampling before taking a remainder. This avoids favoring historical rows when the row count does not divide evenly into $2^{32}$.
+- The generator has no dependency on simulation state, datasets, React, or `Math.random()`. Phase 1.3 will use `nextInt(dataset.dates.length)` to select one complete aligned row per period.
+
+### Validation completed
+
+- Focused PRNG test run: 1 test file and 16 tests passed.
+- Complete Vitest suite: 4 test files and 48 tests passed.
+- `npm run lint`: passed.
+- `npm run format`: passed.
+- `npm run build`: passed; strict TypeScript checking and the production Vite bundle completed.
+
+### Next step
+
+Implement Phase 1.3: the historical joint bootstrap engine. It will draw exactly one source-row index per period and return every asset return, inflation, risk-free rate, and source-row metadata from that same aligned row.
