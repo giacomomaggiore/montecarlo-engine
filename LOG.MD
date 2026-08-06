@@ -150,3 +150,39 @@ Implemented the framework-independent random source required by the historical b
 ### Next step
 
 Implement Phase 1.3: the historical joint bootstrap engine. It will draw exactly one source-row index per period and return every asset return, inflation, risk-free rate, and source-row metadata from that same aligned row.
+
+## 2026-08-06 - Phase 1.3 historical joint bootstrap engine
+
+### Scope completed
+
+Implemented the framework-independent historical joint-bootstrap scenario engine:
+
+- Added a deterministic bootstrap engine that samples one complete aligned historical row per scenario.
+- Preserved asset-return ordering and joint inflation/risk-free observations from the same source row.
+- Added a versioned bootstrap-model identifier and focused deterministic, identity, isolation, and distribution tests.
+- Did not add portfolio accounting, cash flows, result aggregation, dataset loading, binary parsing, workers, React state, or browser randomness.
+
+### Files added
+
+- `src/core/simulation/historicalBootstrap.ts`: exports `HISTORICAL_BOOTSTRAP_MODEL_VERSION` (`historical-bootstrap-v1`) and `createHistoricalBootstrapEngine(dataset, seed)`. The factory creates one private local `xoshiro128**` generator and returns the existing `SimulationEngine` contract.
+- `src/core/simulation/historicalBootstrap.test.ts`: five focused tests for model identity, fixed-seed row selection, complete-row projection, same-seed reproducibility, different-seed divergence, fresh scenario return arrays, and finite-sample row-frequency tolerance.
+
+### Operational behavior
+
+- The factory accepts an already validated `AlignedDataset` and an unsigned 32-bit seed. Seed validation remains centralized in `createXoshiro128StarStar`; production callers validate dataset structure before constructing the engine.
+- Each `nextScenario()` call draws exactly one `sourceRowIndex` with `random.nextInt(dataset.dates.length)`. The index is sampled with replacement, so any historical row may repeat immediately.
+- Asset returns are read from every `dataset.assetReturns` column at that same index; inflation and the base risk-free rate use the identical index. The resulting `PeriodScenario` therefore preserves contemporaneous cross-asset and macro-series dependence for each sampled period.
+- A new ordinary `number[]` is returned for asset returns on every call. The engine never writes to the dataset's typed arrays, carries portfolio state, or samples columns independently.
+- The engine intentionally does not preserve serial dependence, volatility clustering, or crisis duration between scenarios because each period is an independent row draw.
+
+### Validation completed
+
+- Focused engine test: 1 test file and 5 tests passed.
+- Complete Vitest suite: 5 test files and 53 tests passed.
+- `npm run lint`: passed.
+- `npm run format`: passed after Prettier formatted the two new TypeScript files.
+- `npm run build`: passed; strict TypeScript checking and the Vite production build completed.
+
+### Next step
+
+Implement Phase 1.4: minimal unleveraged portfolio accounting. It will apply each bootstrap scenario's simple returns to holdings, then process end-of-period DCA or contribution-only value-averaging contributions without rebalancing existing holdings.
