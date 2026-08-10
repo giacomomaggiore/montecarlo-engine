@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { AlignedDataset } from '../data/datasetTypes'
-import { stepPortfolioPeriod } from '../portfolio/cashFlows'
+import {
+  allocateInitialInvestment,
+  stepPortfolioPeriod,
+} from '../portfolio/cashFlows'
 import { createHistoricalBootstrapEngine } from './historicalBootstrap'
 import { runSimulation } from './runSimulation'
 import type { CashFlowConfig, SimulationConfig } from './simulationTypes'
@@ -167,10 +170,10 @@ function assertMatchesIndependentTrace(
 ) {
   const dataset = createDataset()
   const engine = createHistoricalBootstrapEngine(dataset, seed)
-  let holdings: readonly number[] = [
-    (INITIAL_INVESTMENT * WEIGHTS[0]) as number,
-    (INITIAL_INVESTMENT * WEIGHTS[1]) as number,
-  ]
+  let holdings: readonly number[] = allocateInitialInvestment(
+    INITIAL_INVESTMENT,
+    WEIGHTS,
+  )
 
   for (let periodIndex = 1; periodIndex <= PERIODS; periodIndex += 1) {
     const scenario = engine.nextScenario()

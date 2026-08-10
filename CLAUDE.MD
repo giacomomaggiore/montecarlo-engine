@@ -29,6 +29,8 @@ Apply these rules strictly to all simulation logic (`src/core/`, engine variants
 
 # Coding Standards — Data Pipeline (Python)
 
+Applies to the offline `pipeline/` scripts that convert `data/*.csv` into binary datasets, and to any other standalone Python script in the repo (e.g. `validation/`).
+
 * **Simplicity:** Linear, procedural code. Avoid OOP abstractions, custom classes, or complex inheritance.
 * **Pedagogical Clarity:** Prioritize readable vector operations (`numpy`/`pandas`) that students can trace mentally over hidden optimizations.
 * **Compact & Minimal:** Small, single-purpose functions without boilerplate or unnecessary fallback paths.
@@ -36,6 +38,8 @@ Apply these rules strictly to all simulation logic (`src/core/`, engine variants
 ---
 
 # Coding Standards — App (TypeScript / React)
+
+Applies to everything under `src/`, including tests.
 
 * **Functional & Explicit:** Plain functions over classes, services, or repository layers.
 * **Type-Safe Variant Selection:** Use discriminated unions over inheritance for engine/variant execution (e.g., `engine: 'bootstrap' | 'studentT' | 'markov'`).

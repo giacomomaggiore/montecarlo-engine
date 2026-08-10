@@ -62,37 +62,37 @@ def expand_seed(seed):
     return state
 
 
-class Xoshiro128StarStar:
-    def __init__(self, seed):
-        if not (0 <= seed <= MASK32):
-            raise ValueError("seed must be an unsigned 32-bit integer")
-        self.state0, self.state1, self.state2, self.state3 = expand_seed(seed)
+def init_state(seed):
+    if not (0 <= seed <= MASK32):
+        raise ValueError("seed must be an unsigned 32-bit integer")
+    return expand_seed(seed)
 
-    def next_uint32(self):
-        s0, s1, s2, s3 = self.state0, self.state1, self.state2, self.state3
 
-        result = imul32(rotl32(imul32(s1, 5), 7), 9)
-        temporary = (s1 << 9) & MASK32
+def next_uint32(state):
+    s0, s1, s2, s3 = state
 
-        s2 = (s2 ^ s0) & MASK32
-        s3 = (s3 ^ s1) & MASK32
-        s1 = (s1 ^ s2) & MASK32
-        s0 = (s0 ^ s3) & MASK32
-        s2 = (s2 ^ temporary) & MASK32
-        s3 = rotl32(s3, 11)
+    result = imul32(rotl32(imul32(s1, 5), 7), 9)
+    temporary = (s1 << 9) & MASK32
 
-        self.state0, self.state1, self.state2, self.state3 = s0, s1, s2, s3
-        return result
+    s2 = (s2 ^ s0) & MASK32
+    s3 = (s3 ^ s1) & MASK32
+    s1 = (s1 ^ s2) & MASK32
+    s0 = (s0 ^ s3) & MASK32
+    s2 = (s2 ^ temporary) & MASK32
+    s3 = rotl32(s3, 11)
 
-    def next_int(self, upper_exclusive):
-        # Rejection sampling before the modulo: without it, historical rows
-        # whose index falls in the "leftover" part of the 2**32 range would be
-        # drawn very slightly more often than rows that divide evenly into it.
-        accepted_range = (UINT32_RANGE // upper_exclusive) * upper_exclusive
-        value = self.next_uint32()
-        while value >= accepted_range:
-            value = self.next_uint32()
-        return value % upper_exclusive
+    return result, (s0, s1, s2, s3)
+
+
+def next_int(state, upper_exclusive):
+    # Rejection sampling before the modulo: without it, historical rows
+    # whose index falls in the "leftover" part of the 2**32 range would be
+    # drawn very slightly more often than rows that divide evenly into it.
+    accepted_range = (UINT32_RANGE // upper_exclusive) * upper_exclusive
+    value, state = next_uint32(state)
+    while value >= accepted_range:
+        value, state = next_uint32(state)
+    return value % upper_exclusive, state
 
 
 # --- Portfolio accounting ----------------------------------------------------
@@ -157,14 +157,14 @@ PERIODS = 4
 
 
 def run_case(label, seed, cash_flow):
-    random_generator = Xoshiro128StarStar(seed)
+    state = init_state(seed)
     holdings = allocate_initial_investment(INITIAL_INVESTMENT, WEIGHTS)
 
     print(f"\n=== {label} (seed={seed}) ===")
     print(f"period 0: holdings={fmt(holdings)} equity={sum(holdings):.6f}")
 
     for period_index in range(1, PERIODS + 1):
-        row = random_generator.next_int(ROW_COUNT)
+        row, state = next_int(state, ROW_COUNT)
         asset_returns = [ASSET_A_RETURNS[row], ASSET_B_RETURNS[row]]
 
         result = step_portfolio_period(
