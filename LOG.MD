@@ -224,3 +224,64 @@ Implemented the smallest pure accounting step that turns one `PeriodScenario` pl
 ### Next step
 
 Implement Phase 1.5: the headless runner and quantiles. It will call the bootstrap engine and `stepPortfolioPeriod` once per period per path, enforce the path/period work budget, and compute p10/p25/p50/p75/p90 terminal-wealth bands with a versioned linear-interpolation rule.
+
+## 2026-08-10 - Phase 1.5 headless runner and quantiles
+
+### Scope completed
+
+This is the phase where every earlier Phase 1 piece is driven together for the first time: the validated dataset (1.1), the seeded PRNG (1.2), the bootstrap engine (1.3), and the per-period accounting step (1.4) now run inside one loop that produces the small, chart-ready summary a future UI will render.
+
+- Added the single canonical percentile function used everywhere in the app, plus a function that turns "every path's value at each period" into five p10–p90 band series.
+- Added the runner that drives `paths × periods` calls to the engine and to `stepPortfolioPeriod`, enforces the existing path/work-budget validation, and assembles the full versioned result.
+- Added explicit, non-silent handling for the one way this accounting can produce a broken number (non-finite equity), including how the quantile step must treat it.
+- Added deterministic selection of which paths keep their full period-by-period detail.
+- Did not add dataset loading, binary parsing, workers, charts, React state, or the parametric engine.
+
+### Files added
+
+- `src/core/math/quantiles.ts`: exports `QUANTILE_VERSION` (`quantile-linear-interpolation-v1`), `QUANTILE_LEVELS`, `computeQuantile`, and `computeQuantileSeries`.
+- `src/core/math/quantiles.test.ts`: 7 tests — version identity, single-value input, an exact order statistic, a fractional interpolation, a hand-checked textbook p10/p90 pair, cross-sectional aggregation, and NaN-filtering.
+- `src/core/simulation/runSimulation.ts`: exports `RETAINED_PATH_COUNT` (`50`), `RunSimulationInput`, and `runSimulation`.
+- `src/core/simulation/runSimulation.test.ts`: 5 tests — a full hand-calculated three-period run, version/metadata propagation, config-rejection reuse, retained-path selection at 3 and 60 paths, and a deliberately broken fake engine proving explicit failure handling.
+
+### Operational behavior
+
+- `computeQuantile(sortedAscendingValues, q)` implements $h=(n-1)q$ and linearly interpolates between the values at $\lfloor h\rfloor$ and $\lceil h\rceil$. This is the same rule as Excel's `PERCENTILE.INC` and NumPy's default `linear` method, chosen so a hand-checked spreadsheet number and the app's own number always agree exactly. `computeQuantileSeries` calls it five times per period, once each for $q\in\{0.10,0.25,0.50,0.75,0.90\}$, over the cross-section of every path's value **at that period** — never over one path's own history.
+- `runSimulation` first calls the existing `validateSimulationConfig`, reading `assetCount` from `dataset.assetIds.length` rather than from `config.weights.length`, so a mismatched config is actually caught rather than compared to itself. On failure it returns `{ ok: false, errors }` — the exact same `ValidationResult` shape Phase 1.1 already defined and tested, just instantiated with a different success payload type.
+- On success, it loops `pathIndex` from `0` to `paths - 1`; for each path it starts from `allocateInitialInvestment`, then for periods `1..periods` draws one scenario from the already-constructed engine and feeds it into `stepPortfolioPeriod`, unmodified, exactly as Phase 1.4 defined it.
+- Per-period equity for every path is written into one flat `Float64Array` of length `(periods + 1) * paths`, indexed as `period * paths + pathIndex`, instead of a nested `number[][]`.
+- If `stepPortfolioPeriod` ever returns a non-finite `equity`, the path is marked failed at that period: one `SimulationFailure` is recorded, and every remaining period slot for that path — in both the flat buffer and, if the path is retained, its `RetainedPath.values` — is explicitly set to `NaN`, never left at the typed array's default `0`.
+- The first `min(50, paths)` paths (by index, in order) are retained with their full `values` (equity at every period) and `scenarios` (one `PeriodScenario` per period). Every other path only contributes to `terminalWealth` and the quantile aggregation.
+- The final `SimulationResult` combines the caller-supplied `modelVersion`/`prngVersion` (this file cannot know which engine produced the scenarios) with this file's own `QUANTILE_VERSION`, alongside the full `config`, the dataset's `identity`, `terminalWealth`, `quantiles`, `retainedPaths`, and `failures`.
+
+### Design rationale — intuition, advantages, consequences, and limitations
+
+This section exists so the choices above can be evaluated, not just read as a list of facts.
+
+- **Reusing `ValidationResult<T>` for the whole run's outcome.**
+  *Intuition:* Phase 1.1 already defined a generic "ok, or a list of structured errors" shape and used it for dataset and config validation. *Advantage:* `runSimulation` needed zero new failure-reporting code — the `ok: false` branch never depended on which success payload (`T`) it was paired with, so returning it straight from `validateSimulationConfig` just worked. *Consequence:* the runner's contract stays symmetric with everything callers already know how to handle. *Limitation:* this only protects against invalid **run-level** input (bad config); it says nothing about a single path failing mid-run, which is a separate, per-path concept handled by `failures` instead.
+
+- **The runner receives an already-built `SimulationEngine`; it never constructs one.**
+  *Intuition:* the runner's job is "loop and account," not "know how to sample history." *Advantage:* Phase 3's Student's $t$ engine will plug into this exact file with no changes — the single extension boundary promised since Phase 1.1 actually holds. *Consequence:* the engine's private PRNG stream advances once per `nextScenario()` call in path-major, period-minor order (all of path 0, then all of path 1, ...); that ordering is now part of a run's reproducible identity, together with the seed. *Limitation, flagged for later:* this design assumes one engine advances through the whole run sequentially. If a future performance phase wants to split paths across multiple Web Workers for speed, each worker would need its own independently-seeded engine, and the exact scenario sequence — and therefore the exact numbers for a given seed — would change. That tradeoff was not made now; it is explicitly deferred.
+
+- **One flat `Float64Array` instead of a `number[][]` for per-period equity.**
+  *Intuition:* this is the same "typed arrays for large simulation data" idea the README's Main Goals section already commits to — a flat array of raw 8-byte numbers has no per-element object/pointer overhead. *Advantage:* memory is bounded and predictable: the existing work budget already caps `paths × periods` at 10,000,000, so this buffer is at most about 80 MB, plus one extra row of `paths` values for period zero. *Consequence:* the whole per-period equity history for the run is held in memory at once — this phase does not stream or discard it early. *Limitation:* 80 MB is still substantial for a browser tab; nothing here proves that is comfortable at the real 50,000-path, 10,000,000-work maximum. Phase 2's worker integration is the point where this needs to be checked against a real browser, and a future phase could compute quantiles period-by-period instead of buffering everything if it turns out to matter. This phase intentionally stays inside the already-agreed budget rather than solving a problem that has not been observed yet.
+
+- **Only `equity` is checked for non-finite values — not `neutralReturn`.**
+  *Intuition:* under the validated dataset's rules (returns floored at $-100\%$) and Phase 1.4's long-only accounting, equity can reach exactly zero (a total wipeout) but cannot go negative or become non-finite. A fully wiped-out, lump-sum, single-asset path can still legitimately compute a `0 / 0` `neutralReturn` in a later period, even though its equity — a real, meaningful $0 — is perfectly finite. *Advantage:* the guard is scoped to exactly what Phase 1.5 consumes (equity, for terminal wealth and quantile bands), so this phase does not have to invent a policy for a metric (`neutralReturn`) that belongs to a future volatility/Sharpe phase. *Consequence:* quantile computation must treat `NaN` entries as "no observation," not "worth $0" — `computeQuantileSeries` filters them out before sorting, rather than letting a naive default silently count them as zero-valued outcomes. *Limitation:* this failure path is expected to be dormant for ordinary bootstrap runs against real, validated data; it was proven with a deliberately broken hand-built fake engine in tests (returning an `Infinity` return), not with real historical data, precisely because real data cannot trigger it today. It exists as a defensive contract for engines this phase does not control, including future ones.
+
+- **Retained paths are the first `min(50, paths)` by index — not random, not percentile-matched.**
+  *Intuition:* every simulated path is an equally valid, independent draw; there is nothing statistically special about path 7 versus path 12,003, so a fixed prefix is not a biased sample. *Advantage:* this is the simplest possible rule to implement and to test exactly — no extra PRNG draw, no tie-breaking logic, no dependency on the quantile computation. *Consequence:* the retained, clickable paths a future UI shows a user will almost never include the exact paths whose terminal wealth sits at p10/p25/p50/p75/p90. A user should not assume any retained line "is the median outcome." *Limitation, explicitly left open:* if that turns out to matter for the product, a later phase could deliberately retain paths nearest each quantile instead of (or in addition to) the first 50. That is a real, foreseeable product question this phase does not answer — it was deferred on purpose to keep path selection independent of, and simpler than, quantile computation.
+
+### Validation completed
+
+- Focused Phase 1.5 test run: 2 test files (`quantiles.test.ts`, `runSimulation.test.ts`) and 12 tests passed.
+- Complete Vitest suite: 8 test files and 74 tests passed.
+- `npm run lint`: passed.
+- `npm run format`: passed after Prettier formatted the four new files.
+- `npm run build`: passed; strict TypeScript checking and the Vite production build completed. Two intermediate type errors were found and fixed: (1) a `let holdings` variable needed an explicit `readonly number[]` annotation for the same reason as in Phase 1.4 — it was first assigned a mutable `number[]` and then rejected the `readonly number[]` returned by `stepPortfolioPeriod`; (2) a conditionally-created `retainedScenarios` array needed an explicit `PeriodScenario[] | null` annotation, because TypeScript inferred an empty array literal (`[]`) as type `never[]` and then rejected every `.push(scenario)` call.
+- One test-authoring error was caught and fixed before this validation: the first hand-written `computeQuantileSeries` test used incorrect hand-calculated p10/p90 values (910/1090 instead of the correct 920/1080 for $h=0.4$ and $h=3.6$); the test comments now show the exact arithmetic so the numbers can be re-checked independently.
+
+### Next step
+
+Implement Phase 1.6: the proof and completion gate for all of Phase 1. This adds no new production code — it validates one small seeded simulation period-by-period against an independent spreadsheet or Python calculation (sampled row, holdings, contribution, neutral return, and equity, not just terminal wealth), confirms the full Vitest suite/lint/format/build all pass together, and documents the PRNG/model/quantile versions and results here before Phase 1 is considered complete.
