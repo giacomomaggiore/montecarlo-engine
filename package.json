@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "jsdo": "^4.3.12",
     "jsom": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

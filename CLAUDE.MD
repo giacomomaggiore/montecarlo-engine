@@ -17,7 +17,7 @@ Applies to everything under `src/` (see `README.md` for the project structure). 
 - **No unnecessary state:** No state-management library beyond React's built-ins (`useState`/`useReducer`/context). Keep input state and execution/run state separate, as in `README.md`'s Financial Rules.
 - **Immutability where it clarifies intent:** Mark inputs `readonly`; avoid mutating shared typed-array buffers outside the worker's batching loop.
 - **Clean & Minimal:** Keep functions small and focused; no boilerplate abstractions in `core/`.
-- **Comments:** Short, English comments only to clarify non-obvious financial/mathematical steps (e.g. why a scale matrix isn't a covariance matrix), not what the code obviously does.
+- **Comments:** Short, English comments  to clarify non-obvious financial/mathematical steps (e.g. why a scale matrix isn't a covariance matrix) and make the code very readable (the project has alsoeducational purposes)
 - **Efficiency:** Correctness and readability first; only optimize after measuring (see `APPENDIX.MD` §7).
 
 # Communication & Teaching Constraints

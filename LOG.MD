@@ -186,3 +186,41 @@ Implemented the framework-independent historical joint-bootstrap scenario engine
 ### Next step
 
 Implement Phase 1.4: minimal unleveraged portfolio accounting. It will apply each bootstrap scenario's simple returns to holdings, then process end-of-period DCA or contribution-only value-averaging contributions without rebalancing existing holdings.
+
+## 2026-08-10 - Phase 1.4 minimal unleveraged portfolio accounting
+
+### Scope completed
+
+Implemented the smallest pure accounting step that turns one `PeriodScenario` plus the previous period's holdings into the next period's holdings:
+
+- Added initial-investment allocation, per-asset return compounding, scheduled-contribution calculation for all three cash-flow modes, contribution investing, and a single orchestrating step function.
+- Applied returns before contributions in every case, so a contribution never earns the return of the period in which it arrives.
+- Never rebalanced existing holdings; only new contributions are invested at target weights, so weights can drift over time.
+- Added hand-calculated tests for compounding, timing, drift, value averaging, and value conservation.
+- Did not add taxes, transaction costs, debt/leverage, benchmark handling, rebalancing, result aggregation, dataset loading, workers, or React changes.
+
+### Files added
+
+- `src/core/portfolio/cashFlows.ts`: exports `PortfolioPeriodResult`, `allocateInitialInvestment`, `applyPeriodReturn`, `computeScheduledContribution`, `investContribution`, and `stepPortfolioPeriod`.
+- `src/core/portfolio/cashFlows.test.ts`: 9 tests for one- and two-asset compounding, DCA timing, weight drift, value-averaging shortfall and no-withdrawal behavior, and value conservation.
+
+### Operational behavior
+
+- `allocateInitialInvestment(initialInvestment, weights)` splits the period-zero lump sum across assets; every later contribution reuses the same target-weight split.
+- `applyPeriodReturn(holdings, assetReturns)` grows each asset independently with `holding * (1 + return)`. It has no notion of a portfolio total, so it stays correct regardless of which engine produced the scenario.
+- `computeScheduledContribution(cashFlow, periodIndex, initialInvestment, preContributionEquity)` returns `0` for `lumpSum`, the fixed amount for `dca`, and `max(0, A_0 + periodIndex * targetIncrease - preContributionEquity)` for `valueAveraging`. The `max(0, ...)` clamp is the only thing that prevents value averaging from ever modeling a withdrawal.
+- `investContribution(holdings, weights, contribution)` adds `weights[i] * contribution` to each holding and leaves every other unit of value exactly where the return step left it, so weights drift away from target between contributions.
+- `stepPortfolioPeriod(...)` orders these steps as apply-return, then compute-contribution, then invest-contribution, matching the README's per-period operation list. It returns holdings, the actual external contribution, total equity, and `neutralReturn`, the pre-contribution equity growth rate that later volatility and Sharpe calculations will use.
+- Every function takes and returns plain `number`/`number[]` values (never `Float32Array`) and never mutates its `holdings` or `weights` argument, so one simulated path cannot corrupt another path's state.
+
+### Validation completed
+
+- Focused portfolio test run: 1 test file and 9 tests passed.
+- Complete Vitest suite: 6 test files and 62 tests passed.
+- `npm run lint`: passed.
+- `npm run format`: passed after Prettier formatted the two new files.
+- `npm run build`: passed; strict TypeScript checking and the Vite production build completed. One intermediate build failure was found and fixed: a test's `let holdings` variable was inferred as mutable `number[]` from its first assignment and then rejected the `readonly number[]` returned by `stepPortfolioPeriod`; the fix was an explicit `readonly number[]` annotation on the `let` declaration.
+
+### Next step
+
+Implement Phase 1.5: the headless runner and quantiles. It will call the bootstrap engine and `stepPortfolioPeriod` once per period per path, enforce the path/period work budget, and compute p10/p25/p50/p75/p90 terminal-wealth bands with a versioned linear-interpolation rule.
