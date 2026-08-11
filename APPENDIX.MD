@@ -160,11 +160,11 @@ $$
 **Variance decomposition — when does hedging actually help?**
 
 $$
-\operatorname{Var}(r^B)\approx\operatorname{Var}(r^C)+\operatorname{Var}(f)+2\operatorname{Cov}(r^C,f)
+\text{Var}(r^B)\approx\text{Var}(r^C)+\text{Var}(f)+2\text{Cov}(r^C,f)
 $$
 
-- Whether hedging reduces volatility depends on the **sign** of $\operatorname{Cov}(r^C,f)$, not just $\operatorname{Var}(f)$.
-- Example: if equity selloffs coincide with USD strengthening ("flight to safety"), $f$ tends to be negative exactly when $r^C$ is very negative → $\operatorname{Cov}(r^C,f)>0$ for a USD investor → unhedged exposure *amplifies* the drawdown.
+- Whether hedging reduces volatility depends on the **sign** of $\text{Cov}(r^C,f)$, not just $\text{Var}(f)$.
+- Example: if equity selloffs coincide with USD strengthening ("flight to safety"), $f$ tends to be negative exactly when $r^C$ is very negative → $\text{Cov}(r^C,f)>0$ for a USD investor → unhedged exposure *amplifies* the drawdown.
 - The opposite sign relationship would make currency exposure a diversifier — hedging it away would *increase* volatility.
 - Conclusion: "always hedge" / "never hedge" are not universal rules. The answer is empirical, asset- and currency-pair-specific.
 
@@ -259,7 +259,7 @@ $$
 $$
 
 - Monte Carlo error of the mean shrinks ≈ $1/\sqrt{N}$. Halving the error needs about 4× the paths. This sets the feasible path count in a browser.
-- More precisely: $\operatorname{SE}(\bar X)\approx s_X/\sqrt N$. Approximate 95% CI: $\bar X\pm1.96\operatorname{SE}(\bar X)$.
+- More precisely: $\text{SE}(\bar X)\approx s_X/\sqrt N$. Approximate 95% CI: $\bar X\pm1.96\text{SE}(\bar X)$.
 - This CI quantifies error from a *finite number of simulated paths*, **conditional on the fitted model** — it says nothing about whether the model predicts real markets well.
 
 **Law of Large Numbers and Central Limit Theorem.**
@@ -271,7 +271,7 @@ $$
 **Standard error ≠ standard deviation.**
 
 - $s_X$ = spread of individual outcomes. Does not shrink with $N$.
-- $\operatorname{SE}(\bar X)=s_X/\sqrt N$ = precision of the *estimated average*. Shrinks with $N$.
+- $\text{SE}(\bar X)=s_X/\sqrt N$ = precision of the *estimated average*. Shrinks with $N$.
 - Confusing the two overstates confidence in point estimates, and understates how spread out any single simulated future can be.
 
 **Quantile bands don't share the mean's $1/\sqrt N$ error behavior.**
@@ -308,7 +308,7 @@ $$
 ### Correlation and Covariance
 
 $$
-\rho_{ij} = \frac{\operatorname{Cov}(r_i, r_j)}{\sigma_i\sigma_j}
+\rho_{ij} = \frac{\text{Cov}(r_i, r_j)}{\sigma_i\sigma_j}
 $$
 
 **Geometric view.** For centered series, $\rho_{ij}=\cos\theta_{ij}$ — the cosine of the angle between two return vectors in $\mathbb{R}^T$.
@@ -340,7 +340,7 @@ Historical correlation is **not stable**, especially in crises. It is an estimat
 
 Related topics: eigenvalues/eigenvectors, Cholesky decomposition, covariance vs. correlation, variance preservation during repair.
 
-- $\Sigma=DRD$, where $D=\operatorname{diag}(s_1,\ldots,s_A)$ and $R$ is a correlation matrix.
+- $\Sigma=DRD$, where $D=\text{diag}(s_1,\ldots,s_A)$ and $R$ is a correlation matrix.
 - Valid correlation matrix: symmetric, unit diagonal, PSD ($a^\top R a\ge0$ for every $a$).
 - If $R=LL^\top$ (positive definite), correlated normal shocks: $Lz$, $z\sim N(0,I)$.
 - Log any Higham repair — it changes the fitted dependence structure. A small diagonal jitter may still be needed for a strict Cholesky factorization.
@@ -350,13 +350,13 @@ Related topics: eigenvalues/eigenvectors, Cholesky decomposition, covariance vs.
 Optimization problem: given a near-valid symmetric matrix $A$, find
 
 $$
-X^\star = \arg\min_{X}\ \|A-X\|_F \quad\text{subject to } X\succeq0,\ \operatorname{diag}(X)=\mathbf{1}
+X^\star = \arg\min_{X}\ \|A-X\|_F \quad\text{subject to } X\succeq0,\ \text{diag}(X)=\mathbf{1}
 $$
 
 - $\|M\|_F=\sqrt{\sum_{i,j}M_{ij}^2}$; $X\succeq0$ means PSD.
 - This is a projection onto the intersection of two convex sets: PSD matrices $\mathcal{S}$, unit-diagonal matrices $\mathcal{U}$. The intersection is not simply "project onto one, then the other, once."
 
-**Step 1 — project onto the PSD cone.** Eigendecompose $M=Q\Lambda Q^\top$; clip negative eigenvalues to zero: $M^+ = Q\Lambda^+Q^\top$, $\Lambda^+=\operatorname{diag}(\max(\lambda_i,0))$.
+**Step 1 — project onto the PSD cone.** Eigendecompose $M=Q\Lambda Q^\top$; clip negative eigenvalues to zero: $M^+ = Q\Lambda^+Q^\top$, $\Lambda^+=\text{diag}(\max(\lambda_i,0))$.
 
 - Idea: a non-PSD matrix is "PSD except along a few bad directions" — zero out just those.
 
@@ -389,7 +389,7 @@ $$
 
 **Cost.** ≈$A^3/3$ multiply-adds (about half of a general $LU$ factorization, thanks to symmetry). For $A\le6$: about 72 operations — computationally free. A one-time setup cost, like Higham repair.
 
-**Generating correlated shocks.** For $z\sim N(0,I)$: $Y=\mu+Lz$ has covariance $\operatorname{Cov}(Lz)=L\operatorname{Cov}(z)L^\top=LL^\top=S$. A one-line proof; the same mechanism (plus a chi-square scale factor) builds the multivariate Student's $t$ draws.
+**Generating correlated shocks.** For $z\sim N(0,I)$: $Y=\mu+Lz$ has covariance $\text{Cov}(Lz)=L\text{Cov}(z)L^\top=LL^\top=S$. A one-line proof; the same mechanism (plus a chi-square scale factor) builds the multivariate Student's $t$ draws.
 
 **Numerical stability.** No pivoting is needed for genuinely positive-definite matrices — but near-duplicate assets shrink $L_{jj}$ for later columns, amplifying rounding error downstream. Treat any $L_{jj}$ below a documented threshold as an explicit factorization failure, not a silently degraded result.
 
@@ -488,7 +488,7 @@ $$
 *Meaning of excess kurtosis.* Standardized fourth central moment:
 
 $$
-\operatorname{Kurt}(X)=E\left[\left(\frac{X-E[X]}{\sqrt{\operatorname{Var}(X)}}\right)^4\right]
+\text{Kurt}(X)=E\left[\left(\frac{X-E[X]}{\sqrt{\text{Var}(X)}}\right)^4\right]
 $$
 
 - Normal distribution: kurtosis $3$. **Excess kurtosis** = kurtosis $- 3$.
@@ -520,14 +520,14 @@ $$
 - **Scale ≠ standard deviation**, generally. For $\nu>2$:
 
 $$
-\operatorname{Var}(X)=\sigma^2\frac{\nu}{\nu-2}
+\text{Var}(X)=\sigma^2\frac{\nu}{\nu-2}
 $$
 
 - Standard deviation $=\sigma\sqrt{\nu/(\nu-2)}$, not $\sigma$. They only coincide as $\nu\to\infty$.
 - **A fitted historical volatility cannot be plugged in directly as $\sigma$** — it needs the degrees-of-freedom adjustment.
 
 - Standard $t$ ($\mu=0,\sigma=1$), CDF $T_{\nu}(x)=\Pr(t_{\nu}\le x)$: closed form only for special $\nu$; use numerical libraries otherwise.
-- Variance of the standard $t_\nu$, $\nu>2$: $\operatorname{Var}(t_{\nu})=\nu/(\nu-2)$ (multiply by $\sigma^2$ for the location-scale form).
+- Variance of the standard $t_\nu$, $\nu>2$: $\text{Var}(t_{\nu})=\nu/(\nu-2)$ (multiply by $\sigma^2$ for the location-scale form).
 - Construction: $Z\sim N(0,1)$, $V\sim\chi^2_{\nu}$ independent → $T=Z/\sqrt{V/\nu}\sim t_{\nu}$.
 
 Multivariate density, $x\in\mathbb{R}^p$:
@@ -784,7 +784,7 @@ Future scope:
 For loss variable $L=-R$:
 
 $$
-\operatorname{VaR}_{\alpha}(L)=\inf\{x:\Pr(L\le x)\ge\alpha\}, \qquad \operatorname{ES}_{\alpha}(L)=E[L\mid L\ge\operatorname{VaR}_{\alpha}(L)]
+\text{VaR}_{\alpha}(L)=\inf\{x:\Pr(L\le x)\ge\alpha\}, \qquad \text{ES}_{\alpha}(L)=E[L\mid L\ge\text{VaR}_{\alpha}(L)]
 $$
 
 - Both inherit every assumption in the data, calibration, and simulation engine — model-dependent estimates, not objective probabilities.
