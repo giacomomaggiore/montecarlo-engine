@@ -352,3 +352,231 @@ Before editing `LOG.MD`, found the working tree already had 101 lines of uncommi
 ### Next step
 
 Resume the dataset artifact gate described above — the code review findings did not change the plan for Phase 2.
+
+## 2026-08-11 - Phase 2 Worker integration, and an offline ETF data helper
+
+### Scope completed
+
+Two independent pieces of work landed together in this session:
+
+1. Implemented all of Phase 2 — Worker integration — exactly as newly detailed in `README.md`'s Work-in-Progress Plan (Phase 2.1 through 2.6): a temporary placeholder dataset, a framework-independent Worker message protocol, a batched/progress-reporting extension to `runSimulation`, the actual `simulation.worker.ts` entry point, a React `useSimulationWorker` lifecycle hook with run-ID-based stale-message filtering, and a uPlot quantile-band chart — replacing the Phase 0 raw-JSON dump on the Engine page with a real Run/Cancel/chart pipeline running end to end in a Web Worker.
+2. Added `pipeline/fetch_etf_data.py`, an offline helper for downloading new tickers into `data/` and for auditing the currency/exchange/history of tickers already there, and used its `lookup` command to build the first `pipeline/etf_metadata.csv` covering every ticker currently in `data/`.
+
+Neither piece touches the still-pending Dataset artifact gate: Phase 2 deliberately runs against a synthetic placeholder dataset, and the ETF helper only grows the raw `data/` CSV inputs that gate will eventually consume — it does not produce `assets.json`, `manifest.json`, or the versioned binary return matrix.
+
+### Files added — Phase 2
+
+- `src/features/simulator/placeholderDataset.ts` / `.test.ts`: `createPlaceholderDataset()`, a deterministic 312-row, two-asset synthetic `AlignedDataset` generated from the existing `xoshiro128**` PRNG (not hand-typed rows). Its `DatasetIdentity.version` contains the literal string `placeholder` so a Phase 2 result can never be mistaken for output of the real Dataset artifact gate loader.
+- `src/workers/workerMessages.ts` / `.test.ts`: the Worker message protocol (`RunRequestMessage`, `ProgressMessage`, `ResultMessage`, `ErrorMessage`), plus two pure rules: `isCurrentRun(activeRunId, messageRunId)` and `buildTransferList(result)`.
+- `src/workers/executeRun.ts` / `.test.ts`: `executeRun(request, emit)`, the entire executable logic of the Worker boundary — dataset validation, engine construction, calling `runSimulation` with a progress callback, emitting exactly one terminal message — with no dependency on `self` or `postMessage`, so it is unit-tested with a plain array collecting `emit()` calls instead of a real Worker thread.
+- `src/workers/simulation.worker.ts`: the thin, few-line adapter wiring `self.onmessage`/`self.postMessage` around `executeRun`. This is the only file allowed to reference `self`.
+- `tsconfig.worker.json` (new) plus a reference from `tsconfig.json` and an exclusion in `tsconfig.app.json`: TypeScript cannot mix the `DOM` and `WebWorker` lib sets in one program, so the Worker entry file gets its own `tsc -b` project, mirroring how `tsconfig.node.json` already isolates `vite.config.ts`.
+- `src/features/simulator/executionState.ts` / `.test.ts`: `ExecutionState` (`idle` / `loading-data` / `running` / `completed` / `cancelled` / `failed`, matching the Frontend Layout specification exactly), `reduceExecutionState`, and `messageToAction` — the hook's entire state machine and stale-message filter, tested as plain functions with no Worker or React involved.
+- `src/features/simulator/useSimulationWorker.ts`: the one place allowed to construct or `terminate()` a real `Worker`. A fresh `Worker` and a fresh `crypto.randomUUID()` run ID are minted on every `run()` call; `cancel()` is `terminate()` followed by a `cancel` action, never a cooperative flag.
+- `src/charts/chartData.ts` / `.test.ts`: `toChartData(result)`, the pure mapping from one `SimulationResult` to a period-index axis plus the five quantile series. Kept in its own module with zero `uplot` import, because importing the `uplot` package at all runs a module-load side effect that calls `matchMedia` — fatal under Vitest's jsdom environment even if no chart is ever constructed.
+- `src/charts/portfolioChart.ts`: `createPortfolioChart(container, result)`, using uPlot's native `bands` option to fill a p10–p90 band and a p25–p75 band, with a single visible p50 line. Verified only by manual browser inspection, per the Maintenance Policy's Playwright-smoke-suite carve-out.
+- `src/features/simulator/PortfolioChart.tsx`: thin React lifecycle wrapper (`new uPlot` on mount, `.setData()` on a new result, `.destroy()` on unmount).
+- `src/features/simulator/SimulatorPage.tsx`: rewritten to call `useSimulationWorker()`, render Run/Cancel against one fixed demo `SimulationConfig` (weekly, 2,000 paths, 520 periods, DCA $100/period, seed 42) and the placeholder dataset, show a live "Running… X / Y paths" indicator and explicit `cancelled`/`failed` states, and render `PortfolioChart` once `completed`.
+- `src/test/setup.ts`: added a minimal `window.matchMedia` stub (jsdom has none) so any test importing a module tree that touches `uplot` doesn't crash — explicitly documented as a jsdom gap, unlike the deliberately unstubbed `Worker` global.
+- `src/styles/global.css`: added `button:disabled`, `.phase-note`, and `.engine-controls` rules for the new controls.
+
+### Files changed — Phase 2
+
+- `src/core/simulation/runSimulation.ts`: added optional `batchSize`/`onBatchComplete` fields to `RunSimulationInput`. Defaulting `batchSize` to `paths` means every existing Phase 1 call site and test keeps its exact prior behavior; the callback fires from inside the same single-pass loop, so a batched Worker run and an unbatched direct call draw an identical scenario sequence for the same seed. Added one new test proving this (`reports batch progress without changing the computed result`) alongside every pre-existing `runSimulation.test.ts` case, unmodified and still passing.
+- `src/app/App.test.tsx`: replaced the Phase 0 test that clicked Run and asserted a raw placeholder JSON value (no longer true) with a test asserting Run starts enabled and Cancel starts disabled. Clicking Run itself is not exercised here: jsdom has no `Worker` global (confirmed directly — `typeof Worker === 'undefined'` in this test environment), so real Worker construction is intentionally outside the unit-test boundary, per the same reasoning as `useSimulationWorker.ts` above.
+- Deleted `src/features/simulator/placeholderRun.ts`, superseded by the real pipeline.
+- `package.json` / `package-lock.json`: added the one new runtime dependency `uplot`.
+
+### Operational behavior — Phase 2
+
+- The engine's PRNG stream advances in the same path-major, period-minor order whether or not batching is enabled — `onBatchComplete` is a pure notification hook layered on the existing loop, never a second loop or a second engine.
+- `executeRun` validates the dataset first, then tries to construct the bootstrap engine inside a `try`/`catch` (a malformed seed throws from `createXoshiro128StarStar`, before `runSimulation`'s own config validation ever runs), then calls `runSimulation`. Every failure path — bad dataset, bad seed, bad config — produces exactly one `ErrorMessage`, never a thrown exception crossing the Worker boundary.
+- `reduceExecutionState` is the single place stale-message filtering happens: a `progress`/`result`/`error` action only changes state if the state is currently `running` _and_ its `runId` matches the message's `runId`; otherwise the old state is returned unchanged. This was verified directly: a `result` message for a run ID that was already cancelled, and a late `progress` message from a run ID that has since been superseded, are both dropped without changing displayed state.
+- Manual browser verification (Playwright driving a real Chrome instance, since jsdom cannot render or execute a real Worker): clicking Run disables Run, shows "Running… 2000 / 2000 paths", then renders a uPlot chart with a filled outer band, a filled inner band, and a visible median line; starting a second run and clicking Cancel mid-flight shows "Run cancelled.", re-enables Run, and produces no console errors. Screenshots were inspected directly, not just asserted on programmatically.
+
+### Design rationale — the placeholder dataset boundary
+
+Phase 2's purpose, per the newly-written README subtasks, is to prove the _architecture_ — Worker plumbing, message protocol, buffer transfer, cancellation, charting — not to stand up the production dataset early. Building even a small "real-looking" dataset correctly (weekly resampling, common-history alignment, inflation/rate joins) is exactly the work the still-pending Dataset artifact gate exists to do once, correctly, with provenance and checksums; doing a smaller ad hoc version of it here would both duplicate that future work and risk a second, silently-diverging implementation of the same rules. The synthetic placeholder — generated arithmetically from the existing PRNG rather than sourced from any real ticker — makes that boundary impossible to blur: nothing about it can accidentally look like real historical data.
+
+### Files added — ETF data helper
+
+- `pipeline/fetch_etf_data.py`: a procedural (no classes, per `CLAUDE.MD`'s Python standard) offline script with two subcommands:
+  - `add TICKER [TICKER ...]`: downloads full daily adjusted-close history for new tickers into `data/<TICKER>.csv` (refusing to overwrite an existing file unless `--overwrite` is passed) and appends a row to `pipeline/etf_metadata.csv` recording currency, exchange, instrument type, local date range/row count, an injection date (default: today), and the source.
+  - `lookup TICKER [TICKER ...] [--tickers-file FILE]`: the same currency/exchange/instrument-type/history-length check without writing any price data, optionally appended to a metadata CSV via `--output-csv` (which requires an explicit `--as-of` so a pre-existing ticker's report row is never silently stamped with today's date).
+  - Talks to Yahoo Finance's public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart`) directly over `urllib`, not the `yfinance` package: `yfinance`'s separate crumb/session flow hit `YFRateLimitError` repeatedly in this environment, while the same underlying chart endpoint answered every direct request without issue.
+  - One real bug was found and fixed while building this: requesting `range=max&interval=1d` makes Yahoo _silently downgrade_ to monthly granularity once a ticker's full history is "too long" for daily bars (confirmed directly — VTI's 25-year history came back as 303 monthly rows instead of the true 6,325 daily rows, with `meta.dataGranularity: '1mo'` in the response). The fix was requesting explicit `period1=0`/`period2=<now>` epoch bounds instead of the `range` shorthand, which keeps `interval=1d` honored across the full span; `extract_series` now also raises loudly if a response's `dataGranularity` is ever anything but `1d`, rather than writing a silently coarser series — the same "never silently clip invalid values into plausible results" rule the README already applies to numeric values applied here to a silently-downgraded date grid.
+  - Cross-checked against the repository's own curated data: `add`-ing `IBIT` into a scratch directory produced a CSV byte-for-byte identical (same dates, same full-precision floats) to the existing curated `data/IBIT.csv` for every overlapping row, which is strong evidence the original dataset was itself sourced from this same Yahoo endpoint.
+- `pipeline/etf_metadata.csv`: the first metadata table this script produced, from `lookup`-ing all 121 tickers in `data/` that are directly resolvable on Yahoo Finance (columns: `ticker, currency, exchange, instrument_type, first_date, last_date, row_count, injection_date, source`). `first_date`/`last_date`/`row_count` here reflect Yahoo's _live_ full history as of 2026-08-11, not this repository's locally-captured `data/` files — see the report below for the locally-captured figures.
+
+### Operational behavior — ETF data helper
+
+- Currency here is the live-quoted **listing currency** Yahoo reports (`meta.currency` in the chart API response), not yet the README's researched `exposureCurrency`/`fxTreatment` pair — the two can diverge, and did: `VWRA.L` and `IGLA.L` are both listed on the London Stock Exchange (`.L` suffix) but confirmed to trade in **USD**, not GBP. The Dataset artifact gate's `assets.csv` still needs to research each fund's actual economic exposure; this script's currency field is a fast, authoritative-for-listing-currency starting point, not a substitute for that research.
+- `data/` is `.gitignore`d (`/data`), so there is no git history to derive an honest injection date from for the tickers already present. Every file in `data/` — all 145 `.csv` files, including `etf_universe.csv` and `reference_indices.csv` — shares the identical filesystem modification date `2026-07-25`, confirmed directly via `stat`; that is the injection date recorded for the whole pre-existing universe in the report below. Any ticker added later via `add` gets its own, distinct injection date going forward.
+
+### Available ETFs — currency and injection date
+
+Primary investable universe: 121 tickers directly resolved against Yahoo Finance's public chart API on 2026-08-11 (`pipeline/fetch_etf_data.py lookup`). Currency is the live-quoted listing currency reported by that API, not yet the README's researched `exposureCurrency` — the Dataset artifact gate still needs to verify each fund's actual economic exposure before this becomes `assets.json`. Local rows/history reflect this repository's `data/<ticker>.csv` as of the shared injection date below (Yahoo has since added a few more trading days for every ticker, since the API was queried after this data was captured).
+
+| Ticker    | Currency | Exchange      | Type       | Local rows | Local history            | Injection date |
+| --------- | -------- | ------------- | ---------- | ---------- | ------------------------ | -------------- |
+| XTLT.TO   | CAD      | Toronto       | ETF        | 795        | 2023-02-13 to 2026-04-14 | 2026-07-25     |
+| CSH.PA    | EUR      | Paris         | ETF        | 4673       | 2008-01-02 to 2026-04-14 | 2026-07-25     |
+| CSNDX.MI  | EUR      | Milan         | ETF        | 4111       | 2010-01-26 to 2026-04-14 | 2026-07-25     |
+| CSSPX.MI  | EUR      | Milan         | ETF        | 4038       | 2010-05-19 to 2026-04-14 | 2026-07-25     |
+| CSSX5E.MI | EUR      | Milan         | ETF        | 4087       | 2010-03-09 to 2026-04-14 | 2026-07-25     |
+| EIMI.MI   | EUR      | Milan         | ETF        | 2935       | 2014-07-24 to 2026-04-14 | 2026-07-25     |
+| EMUL.MI   | EUR      | Milan         | ETF        | 2769       | 2014-07-25 to 2026-04-14 | 2026-07-25     |
+| EXS1.MI   | EUR      | Milan         | ETF        | 4594       | 2008-02-26 to 2026-04-14 | 2026-07-25     |
+| MEUD.MI   | EUR      | Milan         | ETF        | 539        | 2024-02-19 to 2026-04-14 | 2026-07-25     |
+| SEGA.MI   | EUR      | Milan         | ETF        | 3812       | 2010-01-18 to 2026-04-14 | 2026-07-25     |
+| SMEA.MI   | EUR      | Milan         | ETF        | 576        | 2024-01-02 to 2026-04-14 | 2026-07-25     |
+| SWDA.MI   | EUR      | Milan         | ETF        | 4200       | 2009-09-25 to 2026-04-14 | 2026-07-25     |
+| VAGF.DE   | EUR      | XETRA         | ETF        | 1734       | 2019-06-18 to 2026-04-14 | 2026-07-25     |
+| VUTY.AS   | EUR      | Amsterdam     | ETF        | 2592       | 2016-02-24 to 2026-04-14 | 2026-07-25     |
+| VWCE.MI   | EUR      | Milan         | ETF        | 1587       | 2020-01-14 to 2026-04-14 | 2026-07-25     |
+| XD9U.MI   | EUR      | Milan         | ETF        | 2651       | 2014-09-22 to 2026-04-14 | 2026-07-25     |
+| XG7S.DE   | EUR      | XETRA         | ETF        | 3209       | 2013-08-14 to 2026-04-14 | 2026-07-25     |
+| XMME.MI   | EUR      | Milan         | ETF        | 2161       | 2017-10-03 to 2026-04-14 | 2026-07-25     |
+| AAPL      | USD      | NasdaqGS      | EQUITY     | 4130       | 2010-02-01 to 2026-07-02 | 2026-07-25     |
+| AGG       | USD      | NYSEArca      | ETF        | 5732       | 2003-09-29 to 2026-07-13 | 2026-07-25     |
+| AVUV      | USD      | NYSEArca      | ETF        | 1706       | 2019-09-26 to 2026-07-13 | 2026-07-25     |
+| BIL       | USD      | NYSEArca      | ETF        | 4813       | 2007-05-30 to 2026-07-16 | 2026-07-25     |
+| BIV       | USD      | NYSEArca      | ETF        | 4845       | 2007-04-10 to 2026-07-13 | 2026-07-25     |
+| BND       | USD      | NasdaqGM      | ETF        | 4845       | 2007-04-10 to 2026-07-13 | 2026-07-25     |
+| BNDX      | USD      | NasdaqGM      | ETF        | 3296       | 2013-06-04 to 2026-07-13 | 2026-07-25     |
+| BSV       | USD      | NYSEArca      | ETF        | 4845       | 2007-04-10 to 2026-07-13 | 2026-07-25     |
+| BTC=F     | USD      | CME           | FUTURE     | 2150       | 2017-12-18 to 2026-07-05 | 2026-07-25     |
+| CGDV      | USD      | NYSEArca      | ETF        | 1098       | 2022-02-24 to 2026-07-13 | 2026-07-25     |
+| CL=F      | USD      | NY Mercantile | FUTURE     | 6437       | 2000-08-23 to 2026-04-14 | 2026-07-25     |
+| CSRSX     | USD      | Nasdaq        | MUTUALFUND | 8820       | 1991-07-01 to 2026-07-13 | 2026-07-25     |
+| CTA       | USD      | NYSEArca      | ETF        | 1090       | 2022-03-08 to 2026-07-13 | 2026-07-25     |
+| DBC       | USD      | NYSEArca      | ETF        | 4036       | 2010-04-05 to 2026-04-20 | 2026-07-25     |
+| DBMF      | USD      | NYSEArca      | ETF        | 1804       | 2019-05-08 to 2026-07-13 | 2026-07-25     |
+| DIA       | USD      | NYSEArca      | ETF        | 7163       | 1998-01-20 to 2026-07-13 | 2026-07-25     |
+| EFA       | USD      | NYSEArca      | ETF        | 6254       | 2001-08-27 to 2026-07-13 | 2026-07-25     |
+| EMB       | USD      | NasdaqGM      | ETF        | 4668       | 2007-12-19 to 2026-07-13 | 2026-07-25     |
+| EMLC      | USD      | NYSEArca      | ETF        | 4016       | 2010-07-23 to 2026-07-13 | 2026-07-25     |
+| ETH       | USD      | NYSEArca      | ETF        | 494        | 2024-07-23 to 2026-07-13 | 2026-07-25     |
+| EWL       | USD      | NYSEArca      | ETF        | 7628       | 1996-03-18 to 2026-07-13 | 2026-07-25     |
+| EZU       | USD      | Cboe US       | ETF        | 6525       | 2000-07-31 to 2026-07-13 | 2026-07-25     |
+| FTGC      | USD      | NasdaqGM      | ETF        | 3197       | 2013-10-23 to 2026-07-13 | 2026-07-25     |
+| FTLS      | USD      | NYSEArca      | ETF        | 2977       | 2014-09-09 to 2026-07-13 | 2026-07-25     |
+| GC=F      | USD      | COMEX         | FUTURE     | 6428       | 2000-08-30 to 2026-04-14 | 2026-07-25     |
+| GLD       | USD      | NYSEArca      | ETF        | 5444       | 2004-11-18 to 2026-07-13 | 2026-07-25     |
+| GOVT      | USD      | Cboe US       | ETF        | 3554       | 2012-02-24 to 2026-04-14 | 2026-07-25     |
+| GSG       | USD      | NYSEArca      | ETF        | 5024       | 2006-07-21 to 2026-07-13 | 2026-07-25     |
+| HGER      | USD      | NYSE          | ETF        | 1107       | 2022-02-10 to 2026-07-13 | 2026-07-25     |
+| HYG       | USD      | NYSEArca      | ETF        | 4844       | 2007-04-11 to 2026-07-13 | 2026-07-25     |
+| IBIT      | USD      | NasdaqGM      | ETF        | 626        | 2024-01-11 to 2026-07-13 | 2026-07-25     |
+| ICVT      | USD      | Cboe US       | ETF        | 2792       | 2015-06-04 to 2026-07-13 | 2026-07-25     |
+| IEF       | USD      | NasdaqGM      | ETF        | 6026       | 2002-07-30 to 2026-07-13 | 2026-07-25     |
+| IEFA      | USD      | Cboe US       | ETF        | 3446       | 2012-10-24 to 2026-07-13 | 2026-07-25     |
+| IEMG      | USD      | NYSEArca      | ETF        | 3446       | 2012-10-24 to 2026-07-13 | 2026-07-25     |
+| IEUR      | USD      | NYSEArca      | ETF        | 3038       | 2014-06-12 to 2026-07-13 | 2026-07-25     |
+| IGLA.L    | USD      | LSE           | ETF        | 2142       | 2017-10-19 to 2026-04-14 | 2026-07-25     |
+| IJH       | USD      | NYSEArca      | ETF        | 6569       | 2000-05-26 to 2026-07-13 | 2026-07-25     |
+| IJR       | USD      | NYSEArca      | ETF        | 6569       | 2000-05-26 to 2026-07-13 | 2026-07-25     |
+| IJT       | USD      | NasdaqGM      | ETF        | 6526       | 2000-07-28 to 2026-07-13 | 2026-07-25     |
+| IOO       | USD      | NYSEArca      | ETF        | 6433       | 2000-12-08 to 2026-07-13 | 2026-07-25     |
+| IWM       | USD      | NYSEArca      | ETF        | 6569       | 2000-05-26 to 2026-07-13 | 2026-07-25     |
+| IWR       | USD      | NYSEArca      | ETF        | 6254       | 2001-08-27 to 2026-07-13 | 2026-07-25     |
+| LTPZ      | USD      | NYSEArca      | ETF        | 4175       | 2009-09-08 to 2026-04-14 | 2026-07-25     |
+| MBB       | USD      | NasdaqGM      | ETF        | 4861       | 2007-03-16 to 2026-07-13 | 2026-07-25     |
+| MGC       | USD      | NYSEArca      | ETF        | 4663       | 2007-12-27 to 2026-07-13 | 2026-07-25     |
+| MGK       | USD      | NYSEArca      | ETF        | 4663       | 2007-12-27 to 2026-07-13 | 2026-07-25     |
+| MGV       | USD      | NYSEArca      | ETF        | 4663       | 2007-12-27 to 2026-07-13 | 2026-07-25     |
+| MTUM      | USD      | Cboe US       | ETF        | 3328       | 2013-04-18 to 2026-07-13 | 2026-07-25     |
+| OEF       | USD      | NYSEArca      | ETF        | 6462       | 2000-10-27 to 2026-07-13 | 2026-07-25     |
+| PBDC      | USD      | NYSEArca      | ETF        | 947        | 2022-09-30 to 2026-07-13 | 2026-07-25     |
+| PDBC      | USD      | NasdaqGM      | ETF        | 2873       | 2014-11-07 to 2026-04-14 | 2026-07-25     |
+| PFF       | USD      | NasdaqGM      | ETF        | 4851       | 2007-03-30 to 2026-07-13 | 2026-07-25     |
+| PREFX     | USD      | Nasdaq        | MUTUALFUND | 6419       | 2000-12-29 to 2026-07-13 | 2026-07-25     |
+| PREMX     | USD      | Nasdaq        | MUTUALFUND | 7933       | 1994-12-30 to 2026-07-10 | 2026-07-25     |
+| QAI       | USD      | NYSEArca      | ETF        | 4354       | 2009-03-25 to 2026-07-16 | 2026-07-25     |
+| QQQ       | USD      | NasdaqGM      | ETF        | 6877       | 1999-03-10 to 2026-07-13 | 2026-07-25     |
+| SCHH      | USD      | NYSEArca      | ETF        | 3895       | 2011-01-13 to 2026-07-13 | 2026-07-25     |
+| SGOV      | USD      | NYSE          | ETF        | 1536       | 2020-06-01 to 2026-07-13 | 2026-07-25     |
+| SHY       | USD      | NasdaqGM      | ETF        | 6026       | 2002-07-30 to 2026-07-13 | 2026-07-25     |
+| SI=F      | USD      | COMEX         | FUTURE     | 6430       | 2000-08-30 to 2026-04-14 | 2026-07-25     |
+| SLV       | USD      | NYSEArca      | ETF        | 5082       | 2006-04-28 to 2026-07-13 | 2026-07-25     |
+| SLYG      | USD      | NYSEArca      | ETF        | 6481       | 2000-10-02 to 2026-07-13 | 2026-07-25     |
+| SPY       | USD      | NYSEArca      | ETF        | 5645       | 2004-02-02 to 2026-07-10 | 2026-07-25     |
+| TIP       | USD      | NYSEArca      | ETF        | 5684       | 2003-12-05 to 2026-07-13 | 2026-07-25     |
+| TLH       | USD      | NYSEArca      | ETF        | 4905       | 2007-01-11 to 2026-07-13 | 2026-07-25     |
+| TLT       | USD      | NasdaqGM      | ETF        | 6026       | 2002-07-30 to 2026-07-13 | 2026-07-25     |
+| TSLA      | USD      | NasdaqGS      | EQUITY     | 4027       | 2010-06-29 to 2026-07-02 | 2026-07-25     |
+| USMV      | USD      | Cboe US       | ETF        | 3701       | 2011-10-20 to 2026-07-13 | 2026-07-25     |
+| UTHY      | USD      | NasdaqGM      | ETF        | 764        | 2023-03-28 to 2026-04-14 | 2026-07-25     |
+| VB        | USD      | NYSEArca      | ETF        | 5647       | 2004-01-30 to 2026-07-13 | 2026-07-25     |
+| VBMFX     | USD      | Nasdaq        | MUTUALFUND | 9969       | 1986-12-11 to 2026-07-10 | 2026-07-25     |
+| VBR       | USD      | NYSEArca      | ETF        | 5647       | 2004-01-30 to 2026-07-13 | 2026-07-25     |
+| VCIT      | USD      | NasdaqGM      | ETF        | 4182       | 2009-11-23 to 2026-07-13 | 2026-07-25     |
+| VEA       | USD      | NYSEArca      | ETF        | 4770       | 2007-07-26 to 2026-07-13 | 2026-07-25     |
+| VEIEX     | USD      | Nasdaq        | MUTUALFUND | 8101       | 1994-05-04 to 2026-07-13 | 2026-07-25     |
+| VEU       | USD      | NYSEArca      | ETF        | 4867       | 2007-03-08 to 2026-07-13 | 2026-07-25     |
+| VFINX     | USD      | Nasdaq        | MUTUALFUND | 11725      | 1980-01-02 to 2026-07-10 | 2026-07-25     |
+| VGIT      | USD      | NasdaqGM      | ETF        | 4182       | 2009-11-23 to 2026-07-13 | 2026-07-25     |
+| VGK       | USD      | NYSEArca      | ETF        | 5368       | 2005-03-10 to 2026-07-13 | 2026-07-25     |
+| VGLT      | USD      | NasdaqGM      | ETF        | 4155       | 2010-01-04 to 2026-07-13 | 2026-07-25     |
+| VGSH      | USD      | NasdaqGM      | ETF        | 4182       | 2009-11-23 to 2026-07-13 | 2026-07-25     |
+| VGSIX     | USD      | Nasdaq        | MUTUALFUND | 7588       | 1996-05-13 to 2026-07-10 | 2026-07-25     |
+| VGT       | USD      | NYSEArca      | ETF        | 5647       | 2004-01-30 to 2026-07-13 | 2026-07-25     |
+| VGTSX     | USD      | Nasdaq        | MUTUALFUND | 7599       | 1996-04-29 to 2026-07-13 | 2026-07-25     |
+| VMBS      | USD      | NasdaqGM      | ETF        | 4182       | 2009-11-23 to 2026-07-13 | 2026-07-25     |
+| VNQ       | USD      | NYSEArca      | ETF        | 5480       | 2004-09-29 to 2026-07-13 | 2026-07-25     |
+| VNQI      | USD      | NasdaqGM      | ETF        | 3946       | 2010-11-01 to 2026-07-13 | 2026-07-25     |
+| VOO       | USD      | NYSEArca      | ETF        | 3983       | 2010-09-09 to 2026-07-13 | 2026-07-25     |
+| VPL       | USD      | NYSEArca      | ETF        | 5368       | 2005-03-10 to 2026-07-13 | 2026-07-25     |
+| VT        | USD      | NYSEArca      | ETF        | 4538       | 2008-06-26 to 2026-07-13 | 2026-07-25     |
+| VTI       | USD      | NYSEArca      | ETF        | 6304       | 2001-06-15 to 2026-07-13 | 2026-07-25     |
+| VTSMX     | USD      | Nasdaq        | MUTUALFUND | 8612       | 1992-04-27 to 2026-07-13 | 2026-07-25     |
+| VTV       | USD      | NYSEArca      | ETF        | 5647       | 2004-01-30 to 2026-07-13 | 2026-07-25     |
+| VTWO      | USD      | NasdaqGM      | ETF        | 3974       | 2010-09-22 to 2026-07-13 | 2026-07-25     |
+| VUG       | USD      | NYSEArca      | ETF        | 5647       | 2004-01-30 to 2026-07-13 | 2026-07-25     |
+| VWEHX     | USD      | Nasdaq        | MUTUALFUND | 11725      | 1980-01-02 to 2026-07-10 | 2026-07-25     |
+| VWO       | USD      | NYSEArca      | ETF        | 5362       | 2005-03-10 to 2026-07-02 | 2026-07-25     |
+| VWOB      | USD      | NasdaqGM      | ETF        | 3296       | 2013-06-04 to 2026-07-13 | 2026-07-25     |
+| VWRA.L    | USD      | LSE           | ETF        | 1698       | 2019-07-23 to 2026-04-14 | 2026-07-25     |
+| VXUS      | USD      | NasdaqGM      | ETF        | 3885       | 2011-01-28 to 2026-07-13 | 2026-07-25     |
+| XLRE      | USD      | NYSEArca      | ETF        | 2643       | 2015-10-08 to 2026-04-14 | 2026-07-25     |
+| ^SPGSCI   | USD      | SNP           | INDEX      | 10713      | 1984-01-03 to 2026-07-13 | 2026-07-25     |
+
+Supporting and derived series: 22 files that are not, by themselves, an independent investable asset — proxy-backfilled extensions, computed futures-equivalent series, macro rate/inflation inputs, and backfill-validation reference indices. Currency/exchange for the backfilled and computed rows is inherited from the primary ticker they extend.
+
+| Ticker                       | Currency | Type             | Local rows | Local history            | Injection date | Note                                                    |
+| ---------------------------- | -------- | ---------------- | ---------- | ------------------------ | -------------- | ------------------------------------------------------- |
+| GLOBAL_BLEND                 | USD      | COMPOSITE        | 7599       | 1996-04-29 to 2026-07-13 | 2026-07-25     | constructed blend, not a single tradable ticker         |
+| BTC_EQ_F                     | USD      | COMPUTED         | 2093       | 2017-12-18 to 2026-04-14 | 2026-07-25     | computed equivalent series alongside BTC=F              |
+| CL_EQ_F                      | USD      | COMPUTED         | 6437       | 2000-08-23 to 2026-04-14 | 2026-07-25     | computed equivalent series alongside CL=F               |
+| GC_EQ_F                      | USD      | COMPUTED         | 6428       | 2000-08-30 to 2026-04-14 | 2026-07-25     | computed equivalent series alongside GC=F               |
+| SI_EQ_F                      | USD      | COMPUTED         | 6430       | 2000-08-30 to 2026-04-14 | 2026-07-25     | computed equivalent series alongside SI=F               |
+| EMLC_spliced                 | USD      | PROXY-BACKFILLED | 7933       | 1994-12-30 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of EMLC                      |
+| GLD_spliced                  | USD      | PROXY-BACKFILLED | 6495       | 2000-08-30 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of GLD                       |
+| GSG_spliced                  | USD      | PROXY-BACKFILLED | 10712      | 1984-01-03 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of GSG                       |
+| HYG_spliced                  | USD      | PROXY-BACKFILLED | 11725      | 1980-01-02 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of HYG                       |
+| IEMG_spliced                 | USD      | PROXY-BACKFILLED | 8101       | 1994-05-04 to 2026-07-13 | 2026-07-25     | proxy-backfilled extension of IEMG                      |
+| PFF_spliced                  | USD      | PROXY-BACKFILLED | 6419       | 2000-12-29 to 2026-07-13 | 2026-07-25     | proxy-backfilled extension of PFF                       |
+| SGOV_spliced                 | USD      | PROXY-BACKFILLED | 6540       | 2000-07-03 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of SGOV                      |
+| VNQI_spliced                 | USD      | PROXY-BACKFILLED | 8820       | 1991-07-01 to 2026-07-13 | 2026-07-25     | proxy-backfilled extension of VNQI                      |
+| VNQ_spliced                  | USD      | PROXY-BACKFILLED | 7588       | 1996-05-13 to 2026-07-10 | 2026-07-25     | proxy-backfilled extension of VNQ                       |
+| EFFR_CASH                    | n/a      | RATE/INFLATION   | 6478       | 2000-07-03 to 2026-04-22 | 2026-07-25     | macro series, not a tradable asset                      |
+| FRED_CPIAUCSL                | n/a      | RATE/INFLATION   | 954        | 1947-01-01 to 2026-06-01 | 2026-07-25     | macro series, not a tradable asset                      |
+| FRED_EFFR                    | n/a      | RATE/INFLATION   | 6478       | 2000-07-03 to 2026-04-22 | 2026-07-25     | macro series, not a tradable asset                      |
+| FRED_SOFR                    | n/a      | RATE/INFLATION   | 1935       | 2018-04-03 to 2025-12-31 | 2026-07-25     | macro series, not a tradable asset                      |
+| FRED_US_TREASURY_YIELD_CURVE | n/a      | RATE/INFLATION   | 16843      | 1962-01-02 to 2026-07-23 | 2026-07-25     | macro series, not a tradable asset                      |
+| GSG_REFERENCE_INDEX          | USD      | REFERENCE INDEX  | 414        | 1992-01-01 to 2026-06-01 | 2026-07-25     | backfill-validation proxy only, not directly investable |
+| VNQ_REFERENCE_INDEX          | USD      | REFERENCE INDEX  | 6431       | 2001-03-30 to 2026-07-15 | 2026-07-25     | backfill-validation proxy only, not directly investable |
+| VOO_REFERENCE_INDEX          | USD      | REFERENCE INDEX  | 6431       | 2001-03-30 to 2026-07-15 | 2026-07-25     | backfill-validation proxy only, not directly investable |
+
+### Validation completed
+
+- Complete Vitest suite: 14 test files and 104 tests passed (up from 9 files / 77 tests at the last log entry).
+- `npm run lint`: passed.
+- `npm run format`: passed on every touched file (Prettier's `--write` also reformatted several of the new files to match project style; no logic changes).
+- `npm run build`: passed; `tsc -b` now builds three referenced projects (`tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.worker.json`) and the Vite production bundle correctly code-splits `simulation.worker.js` into its own chunk.
+- Manual browser verification: described above, under Phase 2 Operational behavior.
+- `pipeline/fetch_etf_data.py`: exercised live against Yahoo Finance for both subcommands (`lookup` against 121 real tickers plus one deliberately invalid ticker to confirm `--continue-on-error` behavior; `add` against `IBIT` into a scratch directory, cross-checked byte-for-byte against the curated `data/IBIT.csv`). Not part of the Vitest/lint/build gate — it is an offline pipeline script, validated the way `validation/phase_1_6_independent_check.py` was: by running it and inspecting output, per `CLAUDE.MD`'s Python standards.
+
+### Next step
+
+Resume the dataset artifact gate: build the reproducible USD weekly release (`assets.json`, `manifest.json`, FX provenance, inflation/short-rate series, the base-currency return matrix) from the `data/` inputs now inventoried above, including resolving each fund's actual `exposureCurrency`/`fxTreatment` rather than its listing currency. Phase 3 (parametric Student's $t$) remains next after that, reusing the Phase 2 Worker plumbing unchanged.

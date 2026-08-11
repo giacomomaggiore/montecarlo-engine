@@ -75,6 +75,23 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
+button:disabled {
+  background: #c7cdc8;
+  border-color: #b3bab4;
+  cursor: not-allowed;
+}
+
+.phase-note {
+  color: #4b544e;
+  font-style: italic;
+}
+
+.engine-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
 pre {
   background: #ffffff;
   border: 1px solid #c7cdc8;

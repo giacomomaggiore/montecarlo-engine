@@ -1,13 +1,10 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { App } from './App'
 
 describe('App', () => {
-  it('shows a placeholder result when Run is selected', async () => {
-    const user = userEvent.setup()
-
+  it('renders the Engine route with Run enabled and Cancel disabled before any run', () => {
     render(
       <MemoryRouter
         future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
@@ -16,11 +13,8 @@ describe('App', () => {
       </MemoryRouter>,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Run' }))
-
-    expect(screen.getByLabelText('Simulation result')).toHaveTextContent(
-      '"terminalWealth": 100000',
-    )
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
   })
 
   it.each([

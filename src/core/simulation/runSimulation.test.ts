@@ -174,4 +174,56 @@ describe('runSimulation', () => {
     expect(Number.isNaN(result.value.quantiles.p50[2])).toBe(true)
     expect(result.value.quantiles.p50[0]).toBeCloseTo(1000)
   })
+
+  it('reports batch progress without changing the computed result', () => {
+    const dataset = createDataset()
+    const config = createConfig({ paths: 5, periods: 2 })
+
+    const batched = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 0),
+      dataset,
+      config,
+      modelVersion: 'historical-bootstrap-v1',
+      prngVersion: 'xoshiro128**-v1',
+    })
+    const unbatched = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 0),
+      dataset,
+      config,
+      modelVersion: 'historical-bootstrap-v1',
+      prngVersion: 'xoshiro128**-v1',
+    })
+    if (!batched.ok || !unbatched.ok) {
+      throw new Error('expected two successful runs')
+    }
+    expect(Array.from(batched.value.terminalWealth)).toEqual(
+      Array.from(unbatched.value.terminalWealth),
+    )
+
+    const progressCalls: Array<[number, number]> = []
+    const withProgress = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 0),
+      dataset,
+      config,
+      modelVersion: 'historical-bootstrap-v1',
+      prngVersion: 'xoshiro128**-v1',
+      batchSize: 2,
+      onBatchComplete: (pathsCompleted, totalPaths) => {
+        progressCalls.push([pathsCompleted, totalPaths])
+      },
+    })
+    if (!withProgress.ok) throw new Error('expected a successful run')
+
+    // 5 paths at batchSize 2: boundaries at 2 and 4, plus a final partial
+    // batch of 1 at the last path — the callback must still fire there so a
+    // Worker host always sees a 100%-complete notification.
+    expect(progressCalls).toEqual([
+      [2, 5],
+      [4, 5],
+      [5, 5],
+    ])
+    expect(Array.from(withProgress.value.terminalWealth)).toEqual(
+      Array.from(unbatched.value.terminalWealth),
+    )
+  })
 })

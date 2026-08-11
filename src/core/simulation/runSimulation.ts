@@ -33,6 +33,14 @@ export type RunSimulationInput = {
   // only knows its own quantile rule.
   readonly modelVersion: string
   readonly prngVersion: string
+  // Optional progress cadence for a Worker host (Phase 2). Defaults to one
+  // implicit batch covering the whole run, so every call site that omits
+  // these two fields keeps its exact pre-Phase-2 behavior unchanged.
+  readonly batchSize?: number
+  readonly onBatchComplete?: (
+    pathsCompleted: number,
+    totalPaths: number,
+  ) => void
 }
 
 export function runSimulation(
@@ -51,6 +59,7 @@ export function runSimulation(
 
   const { weights, initialInvestment, cashFlow, paths, periods } = config
   const periodCount = periods + 1
+  const batchSize = input.batchSize ?? paths
 
   // One flat typed array instead of nested arrays: paths * periods is already
   // capped at 10,000,000 by validateSimulationConfig, so this stays bounded
@@ -61,6 +70,16 @@ export function runSimulation(
   const retainedPaths: RetainedPath[] = []
   const retainedCount = Math.min(RETAINED_PATH_COUNT, paths)
 
+  // Time complexity: O(N * T) — one engine draw and one accounting step per
+  // path per period, matching the N (paths) * T (periods) work budget already
+  // enforced by validateSimulationConfig. Space complexity: O(N * T) for the
+  // flat equityByPeriod buffer below, plus O(T) per retained path.
+  //
+  // onBatchComplete is a pure notification hook layered on this single pass —
+  // it never restarts the engine's PRNG stream or re-derives a scenario, so a
+  // batched Worker run and an unbatched direct call draw an identical
+  // sequence for the same seed. Batching only changes how often progress is
+  // reported, never what is computed.
   for (let pathIndex = 0; pathIndex < paths; pathIndex += 1) {
     const isRetained = pathIndex < retainedCount
     const retainedValues = isRetained ? new Float64Array(periodCount) : null
@@ -129,6 +148,13 @@ export function runSimulation(
         values: retainedValues,
         scenarios: retainedScenarios,
       })
+    }
+
+    const pathsCompleted = pathIndex + 1
+    const isBatchBoundary = pathsCompleted % batchSize === 0
+    const isLastPath = pathsCompleted === paths
+    if (isBatchBoundary || isLastPath) {
+      input.onBatchComplete?.(pathsCompleted, paths)
     }
   }
 
