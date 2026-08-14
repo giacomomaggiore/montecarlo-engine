@@ -2,11 +2,13 @@ import { createXoshiro128StarStar } from '../../core/math/random'
 import type { RandomGenerator } from '../../core/math/random'
 import type { AlignedDataset } from '../../core/data/datasetTypes'
 
-// Phase 2 proves the Worker/chart architecture, not the production dataset.
-// This is a synthetic stand-in for the real, versioned dataset the Dataset
-// artifact gate will eventually load from public/data/*.f32 — the
-// 'placeholder' marker in the version string is what stops a Phase 2 result
-// from ever being mistaken for one produced by real historical data.
+// No longer part of the app's runtime path: SimulatorPage.tsx now loads the
+// real released dataset via core/data/loadDataset.ts. This synthetic
+// fixture remains only as a small, deterministic AlignedDataset for
+// Worker-boundary tests (see src/workers/executeRun.test.ts) that need a
+// valid dataset but must not depend on fetch, a real matrix file, or
+// network access — the 'placeholder' marker in the version string still
+// stops any such test fixture from being mistaken for real historical data.
 export const PLACEHOLDER_DATASET_VERSION = 'phase-2-placeholder-dataset-v1'
 
 const PLACEHOLDER_SEED = 0x9a2f1c04

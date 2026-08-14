@@ -200,6 +200,18 @@ def build_manifest(weekly_dates, columns, asset_ids, checksum, byte_length):
     }
 
 
+def none_if_blank(value):
+    # pandas represents a blank CSV cell as float NaN, and NaN is truthy in
+    # Python (`nan or None` returns nan, not None), so the natural-looking
+    # `row["field"] or None` silently keeps NaN instead of falling back.
+    # json.dump then writes the bare token `NaN`, which is not valid JSON --
+    # a browser's `response.json()` throws on it. pd.isna() is the correct
+    # check for "this cell was blank," independent of truthiness.
+    if pd.isna(value):
+        return None
+    return value
+
+
 def build_assets_json(assets, weekly_returns_by_asset, weekly_dates):
     records = []
     for _, row in assets.iterrows():
@@ -228,13 +240,13 @@ def build_assets_json(assets, weekly_returns_by_asset, weekly_dates):
                 "returnCurrency": row["returnCurrency"],
                 "fxTreatment": row["fxTreatment"],
                 "isCurrencyHedged": bool(row["isCurrencyHedged"]),
-                "isin": row["isin"] or None,
-                "domicile": row["domicile"] or None,
+                "isin": none_if_blank(row["isin"]),
+                "domicile": none_if_blank(row["domicile"]),
                 "region_detail": None,
-                "category": row["category"] or None,
-                "distributionPolicy": row["distributionPolicy"] or None,
-                "replicationMethod": row["replicationMethod"] or None,
-                "inceptionDate": row["inceptionDate"] or None,
+                "category": none_if_blank(row["category"]),
+                "distributionPolicy": none_if_blank(row["distributionPolicy"]),
+                "replicationMethod": none_if_blank(row["replicationMethod"]),
+                "inceptionDate": none_if_blank(row["inceptionDate"]),
                 "aum": None if pd.isna(row["aum"]) or row["aum"] == "" else float(row["aum"]),
                 "terAnnual": None,
                 "terAsOf": None,
@@ -275,11 +287,11 @@ def main():
 
     manifest = build_manifest(weekly_dates, columns, asset_ids, checksum, byte_length)
     with open(os.path.join(OUTPUT_DIR, "manifest.json"), "w") as handle:
-        json.dump(manifest, handle, indent=2)
+        json.dump(manifest, handle, indent=2, allow_nan=False)
 
     assets_json = build_assets_json(assets, weekly_returns_by_asset, weekly_dates)
     with open(os.path.join(OUTPUT_DIR, "assets.json"), "w") as handle:
-        json.dump(assets_json, handle, indent=2)
+        json.dump(assets_json, handle, indent=2, allow_nan=False)
 
     print(f"Wrote {matrix_path} ({byte_length} bytes, {len(weekly_dates)} rows x {len(columns)} columns)")
     print(f"Checksum: sha256:{checksum}")

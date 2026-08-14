@@ -1,16 +1,22 @@
+import { loadAlignedDataset } from '../../core/data/loadDataset'
 import { XOSHIRO128_STAR_STAR_VERSION } from '../../core/math/random'
 import { HISTORICAL_BOOTSTRAP_MODEL_VERSION } from '../../core/simulation/historicalBootstrap'
 import type { SimulationConfig } from '../../core/simulation/simulationTypes'
 import { PortfolioChart } from './PortfolioChart'
-import { createPlaceholderDataset } from './placeholderDataset'
 import { useSimulationWorker } from './useSimulationWorker'
+
+// Fixed demo selection until Phase 4 adds a real, searchable ETF picker:
+// two real tickers already present in the released usd-weekly-v1 matrix
+// (public/data/manifest.json's assetColumns), a 60/40 equity/bond split.
+const DEMO_ASSET_IDS = ['SPY', 'AGG'] as const
+const DEMO_WEIGHTS = [0.6, 0.4] as const
 
 // Phase 2 demo configuration only: README defaults are weekly frequency,
 // 2,000 paths, and a 10-year (520-week) horizon. Phase 4 replaces this
 // fixed object with real user-editable Portfolio Construction and
 // Simulation Inputs.
 const DEMO_CONFIG: SimulationConfig = {
-  weights: [0.6, 0.4],
+  weights: [...DEMO_WEIGHTS],
   initialInvestment: 10_000,
   cashFlow: { mode: 'dca', amount: 100 },
   paths: 2000,
@@ -25,7 +31,7 @@ export function SimulatorPage() {
 
   function handleRun() {
     run({
-      dataset: createPlaceholderDataset(),
+      loadDataset: () => loadAlignedDataset(DEMO_ASSET_IDS, 'weekly', 'USD'),
       config: DEMO_CONFIG,
       modelVersion: HISTORICAL_BOOTSTRAP_MODEL_VERSION,
       prngVersion: XOSHIRO128_STAR_STAR_VERSION,
@@ -36,9 +42,9 @@ export function SimulatorPage() {
     <section aria-labelledby="engine-heading" className="page-content">
       <h1 id="engine-heading">Engine</h1>
       <p className="phase-note">
-        Phase 2 demo: this runs against a temporary, synthetic placeholder
-        dataset, not real historical data. The Dataset artifact gate will
-        replace it with the real, versioned loader.
+        Demo portfolio: 60% SPY / 40% AGG, weekly rebalancing-free DCA, against
+        the real released historical dataset (usd-weekly-v1). Phase 4 replaces
+        this fixed selection with a real, searchable portfolio builder.
       </p>
 
       <div className="engine-controls">

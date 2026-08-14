@@ -37,6 +37,11 @@ export type ExecutionAction =
       readonly runId: string
       readonly totalPaths: number
     }
+  | {
+      readonly type: 'load-failed'
+      readonly runId: string
+      readonly errors: readonly ValidationError[]
+    }
   | { readonly type: 'cancel' }
   | { readonly type: 'message'; readonly message: WorkerResponseMessage }
 
@@ -69,6 +74,16 @@ export function reduceExecutionState(
         pathsCompleted: 0,
         totalPaths: action.totalPaths,
       }
+
+    case 'load-failed':
+      // Dataset loading (fetch/checksum/slicing) failed before a Worker was
+      // ever started. Guarded the same way run-started is guarded above: a
+      // load-failed action for a run the user has already cancelled or
+      // superseded with a newer run() call must not move the current state.
+      if (state.status !== 'loading-data' || state.runId !== action.runId) {
+        return state
+      }
+      return { status: 'failed', runId: action.runId, errors: action.errors }
 
     case 'cancel':
       return state.status === 'loading-data' || state.status === 'running'

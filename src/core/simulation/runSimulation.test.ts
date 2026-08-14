@@ -168,11 +168,77 @@ describe('runSimulation', () => {
     expect(result.value.retainedPaths[0].values[0]).toBeCloseTo(1000)
     expect(Number.isNaN(result.value.retainedPaths[0].values[1])).toBe(true)
     expect(Number.isNaN(result.value.retainedPaths[0].values[2])).toBe(true)
-    // The only path failed, so every later quantile band has nothing finite to
-    // aggregate and must say so honestly (NaN), never a fabricated zero.
-    expect(Number.isNaN(result.value.quantiles.p50[1])).toBe(true)
-    expect(Number.isNaN(result.value.quantiles.p50[2])).toBe(true)
-    expect(result.value.quantiles.p50[0]).toBeCloseTo(1000)
+    // The only path failed, so there is no finite terminal-wealth
+    // distribution to select a representative path from — an empty list,
+    // never a fabricated pick.
+    expect(result.value.representativePaths).toEqual([])
+  })
+
+  it('selects the real path nearest each terminal-wealth quantile, not a cross-sectional aggregate', () => {
+    const dataset = createDataset()
+    // 5 single-period paths with both assets given the same scripted return,
+    // so path i's terminal wealth is exactly a hand-checkable
+    // 1000 * (1 + scriptedReturns[i]) on the $1000 lump sum.
+    const scriptedReturns = [0, 0.1, 0.2, 0.3, 0.4]
+    let callIndex = 0
+    const scriptedEngine: SimulationEngine = {
+      nextScenario: () => {
+        const r = scriptedReturns[callIndex]
+        callIndex += 1
+        return {
+          assetReturns: [r, r],
+          inflation: 0,
+          riskFreeRate: 0,
+          sourceRowIndex: 0,
+        }
+      },
+    }
+
+    const result = runSimulation({
+      engine: scriptedEngine,
+      dataset,
+      config: createConfig({ paths: 5, periods: 1 }),
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+    if (!result.ok) throw new Error('expected a successful run')
+
+    expect(Array.from(result.value.terminalWealth)).toEqual([
+      1000, 1100, 1200, 1300, 1400,
+    ])
+
+    // computeQuantile's h = (n-1)*q over the sorted terminal wealths above
+    // (n=5): p1 -> h=0.04 -> target 1004, nearest is path 0 (dist 4).
+    // p10 -> h=0.4 -> target 1040, nearest is path 0 (dist 40, vs path 1's
+    // dist 60) -- p1 and p10 collapse onto the same nearest path with only
+    // 5 candidates, which is expected (see selectRepresentativePaths).
+    // p25 -> h=1.0 -> exactly path 1 (1100). p50 -> h=2.0 -> exactly path 2
+    // (1200). p75 -> h=3.0 -> exactly path 3 (1300). p90 -> h=3.6 -> target
+    // 1360, nearest is path 4 (dist 40, vs path 3's dist 60). p99 -> h=3.96
+    // -> target 1396, nearest is path 4 (dist 4) -- again collapsing with p90.
+    expect(result.value.representativePaths).toHaveLength(7)
+    const byLevel = new Map(
+      result.value.representativePaths.map((path) => [
+        path.quantileLevel,
+        path,
+      ]),
+    )
+    expect(byLevel.get(0.01)?.pathIndex).toBe(0)
+    expect(byLevel.get(0.1)?.pathIndex).toBe(0)
+    expect(byLevel.get(0.25)?.pathIndex).toBe(1)
+    expect(byLevel.get(0.5)?.pathIndex).toBe(2)
+    expect(byLevel.get(0.75)?.pathIndex).toBe(3)
+    expect(byLevel.get(0.9)?.pathIndex).toBe(4)
+    expect(byLevel.get(0.99)?.pathIndex).toBe(4)
+
+    // The selected path's own full trajectory is returned, not a
+    // period-by-period aggregate: path 2's period-0 value is the shared
+    // $1000 starting point, and its period-1 value is its own $1200
+    // terminal wealth.
+    const median = byLevel.get(0.5)
+    expect(median?.terminalWealth).toBeCloseTo(1200)
+    expect(median?.values[0]).toBeCloseTo(1000)
+    expect(median?.values[1]).toBeCloseTo(1200)
   })
 
   it('reports batch progress without changing the computed result', () => {

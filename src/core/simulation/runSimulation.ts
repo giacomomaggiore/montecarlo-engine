@@ -1,5 +1,9 @@
 import type { AlignedDataset } from '../data/datasetTypes'
-import { computeQuantileSeries, QUANTILE_VERSION } from '../math/quantiles'
+import {
+  computeQuantile,
+  QUANTILE_VERSION,
+  REPRESENTATIVE_PATH_QUANTILE_LEVELS,
+} from '../math/quantiles'
 import {
   allocateInitialInvestment,
   stepPortfolioPeriod,
@@ -8,6 +12,7 @@ import type { ValidationResult } from '../validation'
 import type { SimulationEngine } from './simulationEngine'
 import type {
   PeriodScenario,
+  RepresentativePath,
   RetainedPath,
   SimulationConfig,
   SimulationFailure,
@@ -128,8 +133,9 @@ export function runSimulation(
 
     if (failed) {
       // Every never-written period from the failure onward defaults to 0 in the
-      // typed array. Overwrite with NaN so quantile computation can tell "this
-      // path failed here" from "this path was legitimately worth $0 here".
+      // typed array. Overwrite with NaN so downstream consumers (terminal
+      // wealth, representative-path selection) can tell "this path failed
+      // here" from "this path was legitimately worth $0 here".
       for (
         let periodIndex = failedAtPeriod;
         periodIndex <= periods;
@@ -158,15 +164,6 @@ export function runSimulation(
     }
   }
 
-  const periodSamples: number[][] = []
-  for (let periodIndex = 0; periodIndex < periodCount; periodIndex += 1) {
-    const sample = new Array<number>(paths)
-    for (let pathIndex = 0; pathIndex < paths; pathIndex += 1) {
-      sample[pathIndex] = equityByPeriod[periodIndex * paths + pathIndex]
-    }
-    periodSamples.push(sample)
-  }
-
   return {
     ok: true,
     value: {
@@ -180,11 +177,109 @@ export function runSimulation(
         },
       },
       terminalWealth,
-      quantiles: computeQuantileSeries(periodSamples),
+      representativePaths: selectRepresentativePaths(
+        terminalWealth,
+        equityByPeriod,
+        paths,
+        periodCount,
+      ),
       retainedPaths,
       failures,
     },
   }
+}
+
+// For each of REPRESENTATIVE_PATH_QUANTILE_LEVELS (p1, p10, p25, p50, p75,
+// p90, p99), picks the one actually simulated path whose OWN terminal
+// wealth lands nearest that quantile of the cross-sectional terminal-wealth
+// distribution, then returns that path's full period-by-period equity
+// series. This replaced an earlier per-period cross-sectional QuantileSeries
+// (see quantiles.ts) as the chart's data source: that aggregate's "p50 at
+// period 100" could come from a different path than its "p50 at period
+// 101", so it never corresponded to anything a user actually experienced. A
+// real path's terminal wealth is a fact about one simulated future; a
+// cross-sectional statistic at each period is a fact about the whole
+// distribution. Consequence, not a bug: two returned paths' values can
+// cross at intermediate periods, since each is one independent trajectory
+// chosen only by where it ends up -- verified directly against the real
+// released dataset's demo portfolio, the p10 and p90 paths sit on the
+// "wrong" side of each other for roughly 45% of the run's periods (see
+// LOG.MD). With few candidate paths (small `paths`), adjacent levels such
+// as p1/p10 or p90/p99 can also resolve to the very same nearest path.
+//
+// Time complexity: O(paths log paths) to sort finite terminal wealth once,
+// plus O(quantileLevelCount * paths) to find each nearest path and
+// O(quantileLevelCount * periods) to copy out the selected trajectories --
+// all far cheaper than the O(periods * paths log paths) a full per-period
+// cross-sectional sort would have cost. Space complexity:
+// O(quantileLevelCount * periods) for the returned trajectories, reusing
+// the already-allocated equityByPeriod buffer rather than a second copy of
+// the whole N*T matrix.
+function selectRepresentativePaths(
+  terminalWealth: Float64Array,
+  equityByPeriod: Float64Array,
+  paths: number,
+  periodCount: number,
+): RepresentativePath[] {
+  const finitePathIndices: number[] = []
+  for (let pathIndex = 0; pathIndex < paths; pathIndex += 1) {
+    if (Number.isFinite(terminalWealth[pathIndex])) {
+      finitePathIndices.push(pathIndex)
+    }
+  }
+
+  // Every path failed (insolvent/non-finite) -- there is no terminal wealth
+  // distribution to pick a representative path from.
+  if (finitePathIndices.length === 0) {
+    return []
+  }
+
+  const sortedFiniteTerminalWealth = finitePathIndices
+    .map((pathIndex) => terminalWealth[pathIndex])
+    .sort((a, b) => a - b)
+
+  return REPRESENTATIVE_PATH_QUANTILE_LEVELS.map((quantileLevel) => {
+    const target = computeQuantile(sortedFiniteTerminalWealth, quantileLevel)
+    const pathIndex = nearestFinitePathIndex(
+      finitePathIndices,
+      terminalWealth,
+      target,
+    )
+
+    const values = new Float64Array(periodCount)
+    for (let periodIndex = 0; periodIndex < periodCount; periodIndex += 1) {
+      values[periodIndex] = equityByPeriod[periodIndex * paths + pathIndex]
+    }
+
+    return {
+      quantileLevel,
+      pathIndex,
+      terminalWealth: terminalWealth[pathIndex],
+      values,
+    }
+  })
+}
+
+// Ties (equidistant candidates) resolve to the lower path index -- the
+// first strictly-closer candidate wins, so this stays deterministic for a
+// given seed without an extra tie-breaking rule.
+function nearestFinitePathIndex(
+  candidatePathIndices: readonly number[],
+  terminalWealth: Float64Array,
+  target: number,
+): number {
+  let bestIndex = candidatePathIndices[0]
+  let bestDistance = Math.abs(terminalWealth[bestIndex] - target)
+
+  for (const pathIndex of candidatePathIndices) {
+    const distance = Math.abs(terminalWealth[pathIndex] - target)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      bestIndex = pathIndex
+    }
+  }
+
+  return bestIndex
 }
 
 function sum(values: readonly number[]): number {

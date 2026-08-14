@@ -64,13 +64,9 @@ export function isResultMessage(
 export function buildTransferList(result: SimulationResult): ArrayBuffer[] {
   const buffers: ArrayBuffer[] = [result.terminalWealth.buffer]
 
-  buffers.push(
-    result.quantiles.p10.buffer,
-    result.quantiles.p25.buffer,
-    result.quantiles.p50.buffer,
-    result.quantiles.p75.buffer,
-    result.quantiles.p90.buffer,
-  )
+  for (const path of result.representativePaths) {
+    buffers.push(path.values.buffer)
+  }
 
   for (const path of result.retainedPaths) {
     buffers.push(path.values.buffer)

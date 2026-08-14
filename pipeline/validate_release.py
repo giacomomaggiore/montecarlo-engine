@@ -31,6 +31,23 @@ def fail(message):
     sys.exit(1)
 
 
+def load_strict_json(path):
+    # Python's json.load accepts the bare tokens NaN/Infinity/-Infinity by
+    # default -- a non-standard extension a browser's JSON.parse (and
+    # response.json()) does not share. parse_constant intercepts exactly
+    # those tokens, so a release artifact that would crash the browser
+    # loader fails here instead of passing this "validate like the browser
+    # will" gate by accident.
+    with open(path) as handle:
+        return json.load(
+            handle,
+            parse_constant=lambda token: fail(
+                f"{path} contains the non-standard JSON token '{token}', which a "
+                "browser's JSON.parse/response.json() would reject"
+            ),
+        )
+
+
 def sha256_of_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -98,8 +115,7 @@ def check_matrix_values(manifest):
 
 
 def check_assets_json_consistency(manifest, matrix):
-    with open(ASSETS_JSON_PATH) as handle:
-        assets_json = json.load(handle)
+    assets_json = load_strict_json(ASSETS_JSON_PATH)
 
     manifest_assets = set(manifest["assetColumns"])
     catalogue_assets = {record["assetId"] for record in assets_json["assets"]}
@@ -126,8 +142,7 @@ def check_assets_json_consistency(manifest, matrix):
 
 
 def main():
-    with open(MANIFEST_PATH) as handle:
-        manifest = json.load(handle)
+    manifest = load_strict_json(MANIFEST_PATH)
 
     check_checksum(manifest)
     check_byte_length(manifest)

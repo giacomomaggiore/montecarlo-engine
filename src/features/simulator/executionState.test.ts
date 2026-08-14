@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { REPRESENTATIVE_PATH_QUANTILE_LEVELS } from '../../core/math/quantiles'
 import type { SimulationResult } from '../../core/simulation/simulationTypes'
 import {
   IDLE_STATE,
@@ -27,13 +28,14 @@ function fakeResult(): SimulationResult {
       algorithms: { model: 'm', prng: 'p', quantile: 'q' },
     },
     terminalWealth: new Float64Array([1]),
-    quantiles: {
-      p10: new Float64Array([1]),
-      p25: new Float64Array([1]),
-      p50: new Float64Array([1]),
-      p75: new Float64Array([1]),
-      p90: new Float64Array([1]),
-    },
+    representativePaths: REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
+      (quantileLevel) => ({
+        quantileLevel,
+        pathIndex: 0,
+        terminalWealth: 1,
+        values: new Float64Array([1]),
+      }),
+    ),
     retainedPaths: [],
     failures: [],
   }
@@ -88,6 +90,17 @@ describe('reduceExecutionState — transition table', () => {
       running,
       messageToAction({ type: 'error', runId: 'r1', errors }),
     )
+    expect(next).toEqual({ status: 'failed', runId: 'r1', errors })
+  })
+
+  it('loading-data -> failed on a matching load-failed action', () => {
+    const loading: ExecutionState = { status: 'loading-data', runId: 'r1' }
+    const errors = [{ code: 'dataset.fetch.failed', message: 'boom' }]
+    const next = reduceExecutionState(loading, {
+      type: 'load-failed',
+      runId: 'r1',
+      errors,
+    })
     expect(next).toEqual({ status: 'failed', runId: 'r1', errors })
   })
 
@@ -153,6 +166,28 @@ describe('reduceExecutionState — stale message rejection', () => {
         totalPaths: 10,
       }),
     ).toBe(cancelled)
+  })
+
+  it('drops a load-failed action for a run that was already cancelled', () => {
+    const cancelled: ExecutionState = { status: 'cancelled', runId: 'r1' }
+    expect(
+      reduceExecutionState(cancelled, {
+        type: 'load-failed',
+        runId: 'r1',
+        errors: [{ code: 'x', message: 'stale' }],
+      }),
+    ).toBe(cancelled)
+  })
+
+  it('drops a load-failed action whose runId no longer matches the current loading-data run', () => {
+    const loading: ExecutionState = { status: 'loading-data', runId: 'r2' }
+    expect(
+      reduceExecutionState(loading, {
+        type: 'load-failed',
+        runId: 'r1',
+        errors: [{ code: 'x', message: 'stale' }],
+      }),
+    ).toBe(loading)
   })
 
   it('applies a fresh progress message for the current run', () => {

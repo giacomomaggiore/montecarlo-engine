@@ -7,6 +7,16 @@ export const QUANTILE_VERSION = 'quantile-linear-interpolation-v1'
 
 export const QUANTILE_LEVELS = [0.1, 0.25, 0.5, 0.75, 0.9] as const
 
+// The levels runSimulation.ts's selectRepresentativePaths picks one real
+// simulated path for, per chart. Deliberately a separate list from
+// QUANTILE_LEVELS above (which is the five-level set the README's Key
+// Metrics Panel reports terminal wealth at): the chart additionally shows
+// the 1st/99th percentiles as tail-outcome markers, which the metrics table
+// does not need to grow just because the chart's own scope grew.
+export const REPRESENTATIVE_PATH_QUANTILE_LEVELS = [
+  0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99,
+] as const
+
 // sortedAscendingValues must already be sorted and contain only finite numbers.
 // h = (n - 1) * q locates the quantile between two order statistics, then we
 // interpolate linearly between them.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { REPRESENTATIVE_PATH_QUANTILE_LEVELS } from '../core/math/quantiles'
 import type { SimulationResult } from '../core/simulation/simulationTypes'
 import {
   buildTransferList,
@@ -12,6 +13,14 @@ function createResult(retainedPathCount: number): SimulationResult {
     values: new Float64Array([1, 2, 3]),
     scenarios: [],
   }))
+  const representativePaths = REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
+    (quantileLevel, i) => ({
+      quantileLevel,
+      pathIndex: i,
+      terminalWealth: 1000 + i,
+      values: new Float64Array([1000, 1000 + i]),
+    }),
+  )
 
   return {
     metadata: {
@@ -32,13 +41,7 @@ function createResult(retainedPathCount: number): SimulationResult {
       algorithms: { model: 'test', prng: 'test', quantile: 'test' },
     },
     terminalWealth: new Float64Array([1000]),
-    quantiles: {
-      p10: new Float64Array([1]),
-      p25: new Float64Array([2]),
-      p50: new Float64Array([3]),
-      p75: new Float64Array([4]),
-      p90: new Float64Array([5]),
-    },
+    representativePaths,
     retainedPaths,
     failures: [],
   }
@@ -79,16 +82,16 @@ describe('buildTransferList', () => {
     const result = createResult(2)
     const transferList = buildTransferList(result)
 
-    expect(transferList).toHaveLength(1 + 5 + 2)
+    expect(transferList).toHaveLength(1 + 7 + 2)
     expect(transferList).toContain(result.terminalWealth.buffer)
-    expect(transferList).toContain(result.quantiles.p10.buffer)
-    expect(transferList).toContain(result.quantiles.p90.buffer)
+    expect(transferList).toContain(result.representativePaths[0].values.buffer)
+    expect(transferList).toContain(result.representativePaths[6].values.buffer)
     expect(transferList).toContain(result.retainedPaths[0].values.buffer)
     expect(transferList).toContain(result.retainedPaths[1].values.buffer)
   })
 
   it('scales with zero retained paths', () => {
     const result = createResult(0)
-    expect(buildTransferList(result)).toHaveLength(6)
+    expect(buildTransferList(result)).toHaveLength(1 + 7)
   })
 })

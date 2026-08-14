@@ -54,12 +54,35 @@ export type RetainedPath = {
   readonly scenarios: readonly PeriodScenario[]
 }
 
+// One canonical percentile shape, still used by core/math/quantiles.ts's
+// computeQuantileSeries -- a valid, independently tested cross-sectional
+// aggregate ("every path's value at period t") kept available as a building
+// block (e.g. a future metrics table's terminal p10-p90 row) even though
+// runSimulation no longer computes a full per-period series of it: see
+// RepresentativePath below for what the chart renders instead, and LOG.MD's
+// entry on why a synthetic aggregate line was replaced with real paths.
 export type QuantileSeries = {
   readonly p10: Float64Array
   readonly p25: Float64Array
   readonly p50: Float64Array
   readonly p75: Float64Array
   readonly p90: Float64Array
+}
+
+// One real, actually-simulated path per terminal-wealth quantile level,
+// selected by which path's OWN terminal wealth lands nearest that quantile
+// -- see runSimulation.ts's selectRepresentativePaths for the selection
+// rule and LOG.MD for why this replaced a cross-sectional QuantileSeries as
+// the chart's data source. Because each entry is a single independent path
+// chosen only by its terminal value, two entries' `values` can cross at
+// intermediate periods (e.g. the p10 path can sit above the p90 path at
+// period 100) -- this is expected, not a bug: p10 <= p25 <= ... <= p90 is
+// only guaranteed to hold at the terminal period these paths were selected on.
+export type RepresentativePath = {
+  readonly quantileLevel: number
+  readonly pathIndex: number
+  readonly terminalWealth: number
+  readonly values: Float64Array
 }
 
 export type SimulationFailure = {
@@ -72,7 +95,7 @@ export type SimulationFailure = {
 export type SimulationResult = {
   readonly metadata: SimulationRunMetadata
   readonly terminalWealth: Float64Array
-  readonly quantiles: QuantileSeries
+  readonly representativePaths: readonly RepresentativePath[]
   readonly retainedPaths: readonly RetainedPath[]
   readonly failures: readonly SimulationFailure[]
 }

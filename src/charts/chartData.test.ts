@@ -1,13 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import type { SimulationResult } from '../core/simulation/simulationTypes'
+import type {
+  RepresentativePath,
+  SimulationResult,
+} from '../core/simulation/simulationTypes'
 import { toChartData } from './chartData'
 
-function resultWithQuantiles(
-  p10: number[],
-  p25: number[],
-  p50: number[],
-  p75: number[],
-  p90: number[],
+function representativePath(
+  quantileLevel: number,
+  pathIndex: number,
+  values: number[],
+): RepresentativePath {
+  return {
+    quantileLevel,
+    pathIndex,
+    terminalWealth: values[values.length - 1],
+    values: new Float64Array(values),
+  }
+}
+
+function resultWithPaths(
+  periods: number,
+  representativePaths: readonly RepresentativePath[],
 ): SimulationResult {
   return {
     metadata: {
@@ -16,7 +29,7 @@ function resultWithQuantiles(
         initialInvestment: 1,
         cashFlow: { mode: 'lumpSum' },
         paths: 1,
-        periods: p50.length - 1,
+        periods,
         seed: 0,
       },
       dataset: {
@@ -27,47 +40,53 @@ function resultWithQuantiles(
       },
       algorithms: { model: 'm', prng: 'p', quantile: 'q' },
     },
-    terminalWealth: new Float64Array(p50),
-    quantiles: {
-      p10: new Float64Array(p10),
-      p25: new Float64Array(p25),
-      p50: new Float64Array(p50),
-      p75: new Float64Array(p75),
-      p90: new Float64Array(p90),
-    },
+    terminalWealth: new Float64Array(
+      representativePaths.map((path) => path.terminalWealth),
+    ),
+    representativePaths,
     retainedPaths: [],
     failures: [],
   }
 }
 
 describe('toChartData', () => {
-  it('builds a 0..periods index axis matching the quantile series length', () => {
-    const result = resultWithQuantiles(
-      [1, 2, 3],
-      [1, 2, 3],
-      [1, 2, 3],
-      [1, 2, 3],
-      [1, 2, 3],
-    )
+  it('builds a 0..periods index axis from config, independent of representativePaths length', () => {
+    const result = resultWithPaths(2, [representativePath(0.5, 0, [1, 2, 3])])
     const chartData = toChartData(result)
     expect(Array.from(chartData.periods)).toEqual([0, 1, 2])
   })
 
-  it('preserves the quantile ordering p10 <= p25 <= p50 <= p75 <= p90 at every period', () => {
-    const result = resultWithQuantiles(
-      [900, 910, 905],
-      [950, 960, 955],
-      [1000, 1010, 1005],
-      [1050, 1060, 1055],
-      [1100, 1110, 1105],
-    )
+  it('builds the axis correctly even when every path failed (no representative paths)', () => {
+    const result = resultWithPaths(2, [])
+    const chartData = toChartData(result)
+    expect(Array.from(chartData.periods)).toEqual([0, 1, 2])
+    expect(chartData.representativePaths).toEqual([])
+  })
+
+  it('passes representativePaths through unchanged, preserving their order', () => {
+    const p10 = representativePath(0.1, 4, [1000, 900, 950])
+    const p50 = representativePath(0.5, 7, [1000, 1050, 1100])
+    const p90 = representativePath(0.9, 2, [1000, 1300, 1500])
+    const result = resultWithPaths(2, [p10, p50, p90])
+
     const chartData = toChartData(result)
 
-    for (let i = 0; i < chartData.periods.length; i += 1) {
-      expect(chartData.p10[i]).toBeLessThanOrEqual(chartData.p25[i])
-      expect(chartData.p25[i]).toBeLessThanOrEqual(chartData.p50[i])
-      expect(chartData.p50[i]).toBeLessThanOrEqual(chartData.p75[i])
-      expect(chartData.p75[i]).toBeLessThanOrEqual(chartData.p90[i])
-    }
+    expect(chartData.representativePaths).toEqual([p10, p50, p90])
+  })
+
+  it('allows two representative paths to cross at an intermediate period', () => {
+    // Each series is one independent real path chosen only by its terminal
+    // value -- p10 <= p50 <= ... is only guaranteed at the period they were
+    // selected on, not at every period along the way. A dip like this is
+    // expected, not a mapping bug.
+    const p10 = representativePath(0.1, 1, [1000, 1200, 800])
+    const p90 = representativePath(0.9, 2, [1000, 1100, 1600])
+    const result = resultWithPaths(2, [p10, p90])
+
+    const chartData = toChartData(result)
+
+    expect(chartData.representativePaths[0].values[1]).toBeGreaterThan(
+      chartData.representativePaths[1].values[1],
+    )
   })
 })
