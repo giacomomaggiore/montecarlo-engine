@@ -387,6 +387,9 @@ $$
 \rho_{ij} = \frac{\text{Cov}(r_i, r_j)}{\sigma_i\sigma_j}
 $$
 
+- The implementation rejects a covariance diagonal that is non-finite or not strictly positive: a zero or negative estimated variance cannot define a standard deviation or a correlation.
+- The normalization is reversible. With $D=\operatorname{diag}(\sigma_1,\ldots,\sigma_A)$, split $\Sigma$ into $R=D^{-1}\Sigma D^{-1}$, repair $R$ if necessary, then restore scale with $\Sigma_{\mathrm{repaired}}=DR_{\mathrm{repaired}}D$. This isolates any change to dependence from each asset's fitted volatility.
+
 **Geometric view.** For centered series, $\rho_{ij}=\cos\theta_{ij}$ — the cosine of the angle between two return vectors in $\mathbb{R}^T$.
 
 - $\rho=1$: same direction. $\rho=0$: orthogonal. $\rho=-1$: opposite directions.
@@ -419,7 +422,21 @@ Related topics: eigenvalues/eigenvectors, Cholesky decomposition, covariance vs.
 - $\Sigma=DRD$, where $D=\text{diag}(s_1,\ldots,s_A)$ and $R$ is a correlation matrix.
 - Valid correlation matrix: symmetric, unit diagonal, PSD ($a^\top R a\ge0$ for every $a$).
 - If $R=LL^\top$ (positive definite), correlated normal shocks: $Lz$, $z\sim N(0,I)$.
-- Log any Higham repair — it changes the fitted dependence structure. A small diagonal jitter may still be needed for a strict Cholesky factorization.
+- Log any Higham repair — it changes the fitted dependence structure. The implementation does not silently add diagonal jitter: a repaired matrix that is still numerically singular is rejected by the strict Cholesky check rather than sampled from as though it were well-conditioned.
+
+### Symmetric Eigensolver and Numerical Tolerances
+
+The PSD projection needs an eigendecomposition of a real symmetric matrix. The implementation uses cyclic Jacobi rotations: for each off-diagonal pair $(p,q)$, choose an orthogonal plane rotation $G_{pq}$ such that
+
+$$
+M \leftarrow G_{pq}^\top M G_{pq}
+$$
+
+zeroes $M_{pq}$ while preserving symmetry and eigenvalues. Applying the same rotations to an identity matrix accumulates $Q$; once the off-diagonal entries are negligible, the diagonal entries approximate $\Lambda$ and $M\approx Q\Lambda Q^\top$.
+
+- Jacobi is selected for accuracy, determinism, and auditability at the project's cap of $A\le6$, rather than for large-matrix asymptotic speed.
+- The solver stops when the Euclidean norm of the strict upper-triangular entries is below $10^{-14}$, or after 50 sweeps. Entries below $10^{-14}$ are skipped during a sweep. These are numerical, not economic, thresholds: they sit far below meaningful correlation changes.
+- Reconstructing $Q\max(\Lambda,0)Q^\top$ is the Frobenius-nearest PSD projection. The implementation symmetrizes the reconstruction afterward, averaging each mirrored pair, so last-bit floating-point differences cannot leak into later symmetric routines.
 
 ### Higham's Nearest-Correlation-Matrix Algorithm, in Detail
 
@@ -439,6 +456,8 @@ $$
 **Step 2 — project onto the unit-diagonal set.** Reset the diagonal to 1; trivial, but it re-breaks PSD-ness.
 
 **Step 3 — alternate, with Dykstra's correction.** Plain alternation converges slowly, to *some* point in the intersection — not necessarily the nearest one. Dykstra's correction tracks an auxiliary term, subtracted and re-added around each PSD projection, and provably converges to the true Frobenius-nearest matrix. Iterate to a documented tolerance.
+
+- The implementation declares convergence when the largest absolute elementwise change across a full iteration is below $10^{-10}$, and returns a structured failure after 200 iterations rather than passing on an unconverged matrix.
 
 **Restoring variances.** Repair runs on the *correlation* matrix (unit diagonal makes the projection trivial). Set aside $s_1,\ldots,s_A$ beforehand; reapply via $\Sigma_{\text{repaired}} = D R_{\text{repaired}} D$. Guarantees only the correlation structure changes — each asset's fitted variance is untouched.
 
@@ -468,6 +487,9 @@ $$
 **Generating correlated shocks.** For $z\sim N(0,I)$: $Y=\mu+Lz$ has covariance $\text{Cov}(Lz)=L\text{Cov}(z)L^\top=LL^\top=S$. A one-line proof; the same mechanism (plus a chi-square scale factor) builds the multivariate Student's $t$ draws.
 
 **Numerical stability.** No pivoting is needed for genuinely positive-definite matrices — but near-duplicate assets shrink $L_{jj}$ for later columns, amplifying rounding error downstream. Treat any $L_{jj}$ below a documented threshold as an explicit factorization failure, not a silently degraded result.
+
+- PSD is not enough for this factorization: a PSD matrix may have a zero eigenvalue and therefore a zero pivot. The implementation requires each residual pivot variance to exceed $10^{-12}$ times the largest absolute diagonal entry of the input matrix. Scaling the floor by the matrix diagonal makes the same rule meaningful for unit-scale correlations and tiny weekly return covariances.
+- On failure, the engine returns a structured validation error instead of taking a square root of a non-positive value or dividing by a zero diagonal. This prevents a single ill-conditioned direction from propagating `NaN` values through every simulated path.
 
 ### Dependence Beyond Correlation
 
