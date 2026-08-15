@@ -248,6 +248,82 @@ $$
 
 ## 2. Probability, Statistics, and Estimation
 
+### Probability Distributions and Their Moments
+
+- A **random variable** $X$ is described by a cumulative distribution function $F(x)=\Pr(X\le x)$, and — when it exists — a density (continuous) or mass (discrete) function $f$, with $F(x)=\int_{-\infty}^{x}f(u)\,du$ or $F(x)=\sum_{u\le x}f(u)$.
+- The **quantile function** $F^{-1}$ inverts $F$. Every inverse-transform construction in this document — the bootstrap's implicit resampling of the empirical CDF, the copula's $r_i=F_i^{-1}(U_i)$ (§3), the percentile bands themselves (below) — is $F^{-1}$ applied to a uniform draw, in one guise or another.
+
+**Moments.** For raw moment order $k$: $E[X^k]$. Centering first, then standardizing, gives the four moments actually used in this project:
+
+| Order | Name | Definition | Quant-finance reading |
+| --- | --- | --- | --- |
+| 1 | Mean | $E[X]$ | Expected return — noisiest of the four to estimate from a short sample (§2, Mean/Variance below). |
+| 2 | Variance | $E[(X-\mu)^2]$ | Ordinary risk/volatility. |
+| 3 | Skewness | $E\!\left[\left(\frac{X-\mu}{\sigma}\right)^3\right]$ | Asymmetry. Equity-like series are typically left-skewed: large losses more likely or severe than equal-size gains. |
+| 4 | Kurtosis | $E\!\left[\left(\frac{X-\mu}{\sigma}\right)^4\right]$ | Tail thickness relative to a normal (kurtosis 3). Defined precisely, with a worked example, under "Meaning of excess kurtosis" in §3. |
+
+- **Moment generating function** $M_X(t)=E[e^{tX}]$ — differentiating at $t=0$ recovers every moment ($M_X^{(k)}(0)=E[X^k]$), and equality of MGFs on an interval characterizes the distribution. It does **not always exist**: a heavy-tailed distribution can have infinite $E[e^{tX}]$ for any $t\ne0$.
+- The Student's $t$ distribution at *any* finite $\nu$ has no finite MGF for $t\ne0$ — a direct consequence of its polynomial (not exponential) tail decay. Only the **characteristic function** $E[e^{itX}]$, which always exists, is guaranteed to work for a fat-tailed return model. Practically: don't reach for MGF-based tools (Chernoff/exponential-tilting bounds, some large-deviation results) on a Student's $t$ or copula-based return series without first checking they don't secretly assume a finite MGF.
+- **Support and symmetry** matter as much as the moments. A simple return is bounded below at $-100\%$; a log return is unbounded — the precise reason the project's Student's $t$ engine simulates $\ell$, not $r$, before converting back (§1, Simple and Log Returns).
+
+Related topics: Percentiles and Quantiles, below; Meaning of excess kurtosis, §3.
+
+### Distributions Used in This Project
+
+Each entry gives the density/mass function (or a pointer to it), its first moments, and its specific role in the engines above.
+
+**Continuous uniform, $U(0,1)$.**
+
+$$
+f(u)=1,\ 0\le u\le1; \qquad F(u)=u; \qquad E[U]=\tfrac12,\ \ \text{Var}(U)=\tfrac{1}{12}.
+$$
+
+- Role: `xoshiro128**`'s native output range (§3). Every inverse-transform step in this document — rejection-sampled bootstrap row indices, $z\sim N(0,1)$ via Box–Muller, $r_i=F_i^{-1}(U_i)$ in a copula — starts from a $U(0,1)$ draw.
+
+**Normal (Gaussian), $N(\mu,\sigma^2)$.**
+
+$$
+f(x)=\frac{1}{\sigma\sqrt{2\pi}}\exp\!\left(-\frac{(x-\mu)^2}{2\sigma^2}\right); \qquad E[X]=\mu,\ \ \text{Var}(X)=\sigma^2,\ \ \text{skew}=0,\ \ \text{excess kurtosis}=0.
+$$
+
+- **Closure under affine transform:** if $X\sim N(\mu,\sigma^2)$ then $a+bX\sim N(a+b\mu,\,b^2\sigma^2)$. This single fact is *why* $\mu+Lz$ is normal in the Cholesky section (§2, Generating correlated shocks) and why a sum of independent normals is again normal — the finite-sample analogue of the CLT invoked above.
+- Role: the symmetric, thin-tailed reference point every other model in §3 is measured against. Never implemented as a *standalone* joint-return engine here (a multivariate normal is the $\nu\to\infty$ limit of the Student's $t$ engine, and the degenerate case of a Gaussian copula — see Copula Models, §3) — but every $z\sim N(0,I)$ draw in the codebase is this distribution.
+
+**Lognormal.**
+
+If $\ell\sim N(\mu,\sigma^2)$, then $1+r=e^{\ell}$ is lognormal, with
+
+$$
+E[1+r]=e^{\mu+\sigma^2/2}, \qquad \text{Var}(1+r)=\left(e^{\sigma^2}-1\right)e^{2\mu+\sigma^2}.
+$$
+
+- This is the precise, non-approximate statement behind "the geometric mean is generally below the arithmetic mean" in §1: by Jensen's inequality applied to the convex function $e^x$, $E[e^\ell] > e^{E[\ell]}$ whenever $\text{Var}(\ell)>0$. The volatility drag on compounded growth is this inequality, not a rule of thumb.
+- The lognormal is right-skewed in $1+r$ even when $\ell$ is exactly symmetric — a mechanical consequence of exponentiating, not evidence of positive skew in the economic sense. Don't read "lognormal returns" as "upside-biased returns."
+
+**Chi-squared, $\chi^2_\nu$.**
+
+Sum of $\nu$ independent squared standard normals; $E[U]=\nu$, $\text{Var}(U)=2\nu$.
+
+- Role: the divisor $U\sim\chi^2_\nu$ in the multivariate Student's $t$ construction, $Y=\mu+Z/\sqrt{U/\nu}$ (§3) — the mechanism that turns ordinary correlated normal shocks into occasional simultaneous large moves across all assets.
+
+**Student's $t$, $t_\nu$.**
+
+Full density, CDF notation ($T_\nu$), univariate and multivariate moments, and the scale-vs-covariance distinction are given in full in §3 (Parametric Student's $t$ Engine) — not repeated here. Summary:
+
+$$
+E[X]\ \text{undefined for }\nu\le1; \qquad \text{Var}(X)=\frac{\nu}{\nu-2}\ (\nu>2),\ \text{undefined for }\nu\le2; \qquad \text{excess kurtosis}=\frac{6}{\nu-4}\ (\nu>4).
+$$
+
+- Role: heavier-tailed alternative to the normal for a single return series, and (via a shared latent draw) the joint engine used throughout §3.
+
+**Bernoulli / Binomial.**
+
+Bernoulli$(p)$: $E[X]=p$, $\text{Var}(X)=p(1-p)$. Binomial$(N,p)$ = sum of $N$ i.i.d. Bernoulli$(p)$: $E[X]=Np$, $\text{Var}(X)=Np(1-p)$.
+
+- Role: **VaR backtesting** (§5, §8) — if a $\text{VaR}_\alpha$ model is correctly calibrated, the number of breaches over $N$ independent periods is $\text{Binomial}(N,1-\alpha)$; testing "breaches occur at approximately the expected rate" is exactly a test against this distribution. **Probability of ruin** (§5) is the same Bernoulli rate, taken across simulated paths rather than across time.
+
+These are the individual building blocks. The project's actual joint-simulation engines — multivariate normal, multivariate Student's $t$, and the Gaussian/t copulas built from these pieces — are covered in full in §3.
+
 ### Random Variables and Sampling
 
 - Monte Carlo produces many random observations from the same model. It is not a forecast — it estimates a *distribution* of outcomes.
@@ -398,7 +474,10 @@ $$
 - Correlation is linear co-movement only — not joint crashes, tail dependence, causality, or stability over time.
 - Multivariate Student's $t$: common scale shocks → real tail dependence.
 - Independent bootstrap rows: preserve only the *realised* one-period dependence in the sample.
+- Copulas separate this further: dependence and marginal shape become two independently fitted pieces, so tail dependence and asset-specific marginal realism can be improved one at a time rather than together.
 - Neither approach proves a structural economic relationship.
+
+Related topics: Copula Models for Dependence (§3).
 
 ## 3. Monte Carlo Models in the Project
 
@@ -562,6 +641,105 @@ $$
 5. Convert log returns to simple returns, then run the portfolio accounting loop.
 
 Document the parameterization clearly — do not confuse scale and covariance when reporting or matching historical volatility.
+
+### Copula Models for Dependence (Future Extension)
+
+The bootstrap and parametric Student's $t$ engines above answer the joint-simulation problem in one step: draw (or resample) a complete return vector at once, so marginal behaviour and cross-asset dependence come from the same distributional family. A **copula** separates the two questions explicitly:
+
+1. **Marginal behaviour** — how does asset $i$ behave on its own (mean, volatility, skew, tail thickness)?
+2. **Dependence** — how do assets move together, in particular how often several fall sharply at once (*tail dependence*, not just linear correlation)?
+
+- $\rho_{ij}$ (§2) measures ordinary co-movement. It says nothing about whether two assets are *unusually* likely to be extreme simultaneously — the case that matters for portfolio stress. Two pairs can share the same $\rho_{ij}$ while one crashes jointly far more often than the other.
+- Related topics: *Dependence Beyond Correlation* above, which already flags that correlation alone cannot distinguish these cases.
+
+**General construction.** For $A\le6$ assets with one-period return vector $\mathbf{r}=(r_1,\ldots,r_A)^\top$, fit a marginal CDF $F_i$ per asset, then couple them through a latent vector:
+
+$$
+U_i = G(Z_i), \qquad r_i = F_i^{-1}(U_i),
+$$
+
+where $Z_i$ is drawn from a latent multivariate distribution and $G$ is that distribution's own univariate CDF. $U_i$ is the percentile asset $i$ occupies in a given scenario; $F_i^{-1}$ turns that percentile into an actual return. A simulated $U_i=0.01$ means "generate asset $i$'s own 1% lower-tail outcome" — a heavy-tailed or skewed $F_i$ turns that same percentile into a materially different loss than a symmetric one would.
+
+**Where the two already-implemented engines sit on this ladder.**
+
+- The multivariate normal distribution *is* a Gaussian copula with every $F_i$ forced to be normal. The project does not implement it as a standalone engine; it is the $\nu\to\infty$ limit of the Student's $t$ engine above, and it inherits that limit's absence of tail dependence.
+- The Parametric Student's $t$ Engine above *is* a t-copula with every $F_i$ forced to be the *same* Student's $t$ marginal, at the *same* $\nu$. It already has the mechanism that produces joint extremes (the shared random divisor $\sqrt{U/\nu}$, above), but cannot give bonds, equities, and commodities different tail thickness or skew.
+- A **copula with flexible marginals** keeps that dependence mechanism but lets each asset's $F_i$ be fitted separately — from the empirical CDF, the bootstrap's aligned historical matrix, or its own Student's $t$ fit at its own $\hat\nu_i$.
+
+This reframes copulas not as a fourth unrelated method, but as removing the "one distributional family for every asset" constraint already visible in the Student's $t$ engine.
+
+**Gaussian copula with flexible marginals.**
+
+Generate a latent vector $\mathbf{Z}\sim N(0,R)$ ($R$ a correlation matrix, Higham-repaired and Cholesky-factored exactly as in §2), then
+
+$$
+U_i=\Phi(Z_i), \qquad r_i=F_i^{-1}(U_i),
+$$
+
+with $\Phi$ the standard normal CDF.
+
+- *Marginal choices:* the empirical CDF of the aligned historical column (consistent with the bootstrap's row-based data, but now resampled per asset through its own rank rather than as an atomic row); a parametric Student's $t$ marginal per asset, each with its own $\hat\nu_i$ from the method-of-moments rule above; or a parametric body with an extreme-value tail beyond the observed range. An empirical marginal with no tail extrapolation cannot generate a return more extreme than the historical minimum or maximum for that asset — a real limitation given the project's few-hundred-to-1,500-row samples.
+- *Calibrating $R$:* fit it to **rank-transformed** data, not raw returns — convert each historical return to a pseudo-uniform value (rank over $T+1$, or its fitted $F_i$), transform through $\Phi^{-1}$ to normal scores, and take the sample correlation of the scores. Equivalently, from Kendall's $\tau$:
+
+$$
+R_{ij} = \sin\left(\frac{\pi}{2}\hat\tau_{ij}\right).
+$$
+
+This is copula-consistent — it uses only the ordering of returns, so the estimate survives whatever the marginals happen to be.
+
+- *Strengths:* each asset keeps its own realistic shape (skew, fat tails) while dependence stays as simple and explainable as the existing correlation-matrix machinery.
+- *Limitations:* still **no asymptotic tail dependence** — as one asset's loss becomes arbitrarily extreme, the model's implied probability that another is simultaneously extreme still vanishes, for the same reason the plain multivariate normal does. Flexible marginals fix marginal realism, not joint-crash realism.
+
+**t-copula with flexible marginals.**
+
+Replace the latent normal vector with a latent multivariate Student's $t$ vector, reusing the existing construction:
+
+$$
+\mathbf{T} = \frac{\mathbf{Z}}{\sqrt{U/\nu}}, \qquad \mathbf{Z}\sim N(0,R),\ \ U\sim\chi^2_{\nu}, \qquad U_i=T_\nu(T_i), \qquad r_i=F_i^{-1}(U_i),
+$$
+
+where $T_\nu$ is the standard Student's $t$ CDF (already used above for the parametric engine) and $R$ is again a correlation matrix, Higham-repaired and Cholesky-factored once per run. This is exactly the sampling step already implemented for the Parametric Student's $t$ Engine, with one change: instead of feeding $\mu+Lz/\sqrt{U/\nu}$ directly into the portfolio loop as a return, its *percentile* $T_\nu(T_i)$ is read off and passed through each asset's own $F_i^{-1}$.
+
+- *Tail-dependence coefficient.* For a bivariate t-copula with latent correlation $\rho$:
+
+$$
+\lambda = 2\,T_{\nu+1}\!\left(-\sqrt{\frac{(\nu+1)(1-\rho)}{1+\rho}}\right),
+$$
+
+the same $\lambda$ for both tails ($\lambda_U=\lambda_L$). Lower $\nu$ or higher $\rho$ raise the chance of a joint extreme — the formula is not needed for simulation itself, but it is the reason $\nu$ is doing real work here, not just shaping one asset's marginal.
+- *Symmetry limitation:* $\lambda_U=\lambda_L$ is enforced by construction. It cannot make a joint equity/credit sell-off more likely than a joint equity/credit rally of the same size — a real limitation when the concern is specifically the downside.
+- *Strengths:* the most complete of the four — asset-specific marginals **and** genuine joint-extreme behaviour, closest in spirit to what the project's Student's $t$ engine already does with one shared distribution, extended to per-asset shapes.
+- *Limitations:* three sets of parameters to calibrate and validate together (marginals, $R$, $\nu$) rather than one; $\hat\nu$ is at least as unstable here as the already-documented Student's $t$ $\hat\nu$ estimate above, since it is now fit to joint tail behaviour rather than one series' kurtosis; more flexibility raises overfitting risk against a sample of a few hundred to ~1,500 rows.
+
+**Comparison, in the project's terms.**
+
+| Model | Marginals | Tail dependence | Already implemented? |
+| --- | --- | --- | --- |
+| Multivariate normal | Normal | No | No — implicit $\nu\to\infty$ limit only |
+| Multivariate Student's $t$ | One shared Student's $t$ | Yes | Yes — Parametric Student's $t$ Engine, above |
+| Gaussian copula, flexible marginals | Per-asset, any $F_i$ | No | No |
+| t-copula, flexible marginals | Per-asset, any $F_i$ | Yes | No |
+
+- **Robustness with limited data**, ranked most to least robust — directly the project's own historical-sample constraint (see "Bootstrap consistency and its limits" above): multivariate normal → multivariate Student's $t$ → Gaussian copula with simple marginals → t-copula with flexible marginals. Each added degree of flexibility is one more parameter set that can fit sampling noise in a few hundred rows rather than a real feature of markets.
+- **Joint-tail realism**, ranked in the opposite order: t-copula → multivariate Student's $t$ → Gaussian copula → multivariate normal.
+
+These two rankings point in opposite directions on purpose: the same flexibility that makes the t-copula the most realistic joint-tail model also makes it the hardest to trust from this project's sample sizes.
+
+**Calibration workflow, if implemented.**
+
+1. Build the same aligned historical matrix already used by the bootstrap and Student's $t$ engines — one shared data source across every engine.
+2. Fit $F_i$ per asset: empirical CDF, or a parametric Student's $t$ fit reusing the existing $\hat\nu$ estimator, per asset rather than pooled.
+3. Convert each historical column to ranks (or $F_i$-transformed pseudo-uniforms), then to normal or $t_\nu$ scores.
+4. Estimate $R$ from the transformed scores; Higham-repair and Cholesky-factor exactly as in §2 — the repair and factorization machinery is unchanged, only its input (rank-based, not raw-return, correlation) differs.
+5. For a t-copula, estimate a single latent $\nu$ from the transformed scores (not from any one asset's raw kurtosis) and clamp it by the same documented-range logic as the existing Student's $t$ $\hat\nu$ rule.
+6. Sample per period: draw the latent vector, map through $\Phi$ or $T_\nu$ to percentiles, then through each $F_i^{-1}$ to returns; pass the resulting row to the portfolio loop unchanged.
+
+**Validation additions.** The three-layer framework in §8 (verification / statistical validation / external validation) applies unchanged; a copula engine adds specific checks within it:
+
+- *Statistical validation:* simulated rank correlations (not just Pearson correlations) should match $\hat\tau_{ij}$ or $R_{ij}$; simulated marginal quantiles should match each fitted $F_i$; for a t-copula, the simulated frequency of joint low-percentile outcomes across several assets at once should approach the theoretical $\lambda$ above.
+- *External validation:* compare simulated joint-exceedance frequency (e.g. how often two or more assets are simultaneously below their historical 5th percentile) against the same statistic computed directly on history, over the stress windows already listed in §8 (2008, 2011, late 2018, March 2020, 2022) — the existing dependence-validation checks, applied to a dependence structure now fit separately from the marginals.
+
+**Status: not implemented.** Like the block bootstrap above, this is documented for future design work only. The recommended order, if pursued, follows the same one-thing-at-a-time principle as the rest of this appendix: keep marginals fixed while introducing copula dependence (isolates the effect of tail-dependent coupling), before separately upgrading marginals to per-asset fits (isolates the effect of marginal realism) — never change both at once, or a shift in a risk number cannot be attributed to either change.
 
 ### Pseudo-Randomness, Seed, and Reproducibility
 
@@ -1035,11 +1213,12 @@ Passing the first two does **not** establish forecasting ability.
 3. Bootstrap sampling — one asset, then multiple assets with aligned rows.
 4. Matrices, Cholesky decomposition, correlated-normal generation.
 5. Student's $t$ vs. normal, on synthetic data.
-6. The worker, typed arrays, batching, cancellation.
-7. Rebalancing, cost basis, taxes, costs, leverage — one rule at a time, with hand-calculated tests for each.
-8. Drawdown, Sharpe ratio, IRR, real returns — define conventions before adding metrics.
-9. The educational page: assumptions, limitations, formulas.
-10. Markov simulation — only after the existing engines are tested and cross-checked with independent results.
+6. Copulas: Gaussian, then t — on the same synthetic data, marginals held fixed at first so the effect of dependence alone is isolated before marginals are upgraded per asset.
+7. The worker, typed arrays, batching, cancellation.
+8. Rebalancing, cost basis, taxes, costs, leverage — one rule at a time, with hand-calculated tests for each.
+9. Drawdown, Sharpe ratio, IRR, real returns — define conventions before adding metrics.
+10. The educational page: assumptions, limitations, formulas.
+11. Markov simulation — only after the existing engines are tested and cross-checked with independent results.
 
 ## 10. References and Further Study
 
@@ -1049,11 +1228,13 @@ Academic foundation; consult current documentation for browser APIs and librarie
 2. Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2nd ed.). Duxbury.
 3. Tsay, R. S. (2010). *Analysis of Financial Time Series* (3rd ed.). Wiley.
 4. McNeil, A. J., Frey, R., & Embrechts, P. (2015). *Quantitative Risk Management* (Revised ed.). Princeton University Press.
-5. Higham, N. J. (2002). Computing the nearest correlation matrix—A problem from finance. *IMA Journal of Numerical Analysis, 22*(3), 329–343.
-6. Norris, J. R. (1998). *Markov Chains*. Cambridge University Press.
-7. Maginn, J. L., Tuttle, D. L., McLeavey, D. W., & Pinto, J. E. (2007). *Managing Investment Portfolios* (3rd ed.). Wiley.
-8. IEEE Standards Association. (2019). *IEEE Standard for Floating-Point Arithmetic* (IEEE 754-2019).
+5. Nelsen, R. B. (2006). *An Introduction to Copulas* (2nd ed.). Springer.
+6. Demarta, S., & McNeil, A. J. (2005). The t copula and related copulas. *International Statistical Review, 73*(1), 111–129.
+7. Higham, N. J. (2002). Computing the nearest correlation matrix—A problem from finance. *IMA Journal of Numerical Analysis, 22*(3), 329–343.
+8. Norris, J. R. (1998). *Markov Chains*. Cambridge University Press.
+9. Maginn, J. L., Tuttle, D. L., McLeavey, D. W., & Pinto, J. E. (2007). *Managing Investment Portfolios* (3rd ed.). Wiley.
+10. IEEE Standards Association. (2019). *IEEE Standard for Floating-Point Arithmetic* (IEEE 754-2019).
 
-Suggested extensions: block bootstrap methods, shrinkage covariance estimators, multivariate maximum-likelihood estimation, backtesting of risk models, and time-weighted performance measurement.
+Suggested extensions: block bootstrap methods, copula-based dependence models (Gaussian, t), shrinkage covariance estimators, multivariate maximum-likelihood estimation, backtesting of risk models, and time-weighted performance measurement.
 
 The goal is not the most sophisticated model. It's understanding each model's assumptions, making those assumptions visible, and verifying the implementation follows the defined rules.

@@ -33,7 +33,12 @@ export type PeriodScenario = {
   readonly assetReturns: readonly number[]
   readonly inflation: number
   readonly riskFreeRate: number
-  readonly sourceRowIndex: number
+  // The historical row a bootstrap draw came from. `null` for engines whose
+  // scenarios have no historical source row (the parametric Student's t
+  // engine samples from a fitted distribution, not from history) -- an
+  // explicit null rather than a -1 sentinel, so a missing row can never be
+  // silently misused as an array index.
+  readonly sourceRowIndex: number | null
 }
 
 export type AlgorithmVersions = {

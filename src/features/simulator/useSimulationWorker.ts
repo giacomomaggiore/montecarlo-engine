@@ -3,6 +3,7 @@ import type { AlignedDataset } from '../../core/data/datasetTypes'
 import type { SimulationConfig } from '../../core/simulation/simulationTypes'
 import type { ValidationResult } from '../../core/validation'
 import type {
+  EngineSelection,
   RunRequestMessage,
   WorkerResponseMessage,
 } from '../../workers/workerMessages'
@@ -20,8 +21,11 @@ export type RunSimulationRequest = {
   // asking every caller to manage it.
   readonly loadDataset: () => Promise<ValidationResult<AlignedDataset>>
   readonly config: SimulationConfig
-  readonly modelVersion: string
-  readonly prngVersion: string
+  // Which engine the Worker should construct (discriminated union). The
+  // Worker side derives the model/PRNG version strings itself -- the caller
+  // no longer passes them, so they can never disagree with the engine
+  // actually constructed.
+  readonly engineSelection: EngineSelection
 }
 
 // The only place allowed to construct or terminate a real Worker. State
@@ -78,8 +82,7 @@ export function useSimulationWorker() {
         runId,
         dataset: datasetResult.value,
         config: request.config,
-        modelVersion: request.modelVersion,
-        prngVersion: request.prngVersion,
+        engineSelection: request.engineSelection,
       }
       worker.postMessage(message)
     })

@@ -92,6 +92,21 @@ button:disabled {
   margin: 1rem 0;
 }
 
+.engine-selector {
+  border: 1px solid #c7cdc8;
+  border-radius: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 0.75rem;
+}
+
+.engine-selector button[aria-pressed='true'] {
+  font-weight: 700;
+  outline: 2px solid currentcolor;
+}
+
 pre {
   background: #ffffff;
   border: 1px solid #c7cdc8;

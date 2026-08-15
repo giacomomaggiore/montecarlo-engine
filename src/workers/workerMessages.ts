@@ -1,4 +1,5 @@
 import type { AlignedDataset } from '../core/data/datasetTypes'
+import type { ParametricStudentTOptions } from '../core/simulation/parametricStudentT'
 import type {
   SimulationConfig,
   SimulationResult,
@@ -9,13 +10,25 @@ import type { ValidationError } from '../core/validation'
 // runId that started it, which is what lets the main thread apply the
 // isCurrentRun() rule below to every message uniformly, regardless of type.
 
+// Which scenario engine the Worker should construct, as a discriminated
+// union (per the coding standards' type-safe variant selection). The request
+// carries the *selection*, never a prebuilt engine: an engine closure cannot
+// cross a structured-clone boundary. Replacing the old modelVersion/
+// prngVersion fields also closes the "documented convention, not
+// compiler-enforced" gap Phase 1.5 flagged -- the Worker side is the one
+// place that knows which engine it constructs, so it now supplies the
+// version strings itself instead of trusting the caller to keep two
+// loosely-coupled arguments consistent.
+export type EngineSelection =
+  | { readonly engine: 'bootstrap' }
+  | { readonly engine: 'studentT'; readonly options: ParametricStudentTOptions }
+
 export type RunRequestMessage = {
   readonly type: 'run'
   readonly runId: string
   readonly dataset: AlignedDataset
   readonly config: SimulationConfig
-  readonly modelVersion: string
-  readonly prngVersion: string
+  readonly engineSelection: EngineSelection
 }
 
 export type ProgressMessage = {

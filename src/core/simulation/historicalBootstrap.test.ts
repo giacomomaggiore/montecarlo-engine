@@ -21,7 +21,10 @@ describe('createHistoricalBootstrapEngine', () => {
     ])
 
     for (const scenario of scenarios) {
+      // The bootstrap engine always samples a real historical row; null is
+      // reserved for parametric engines (see PeriodScenario).
       const row = scenario.sourceRowIndex
+      if (row === null) throw new Error('bootstrap must set sourceRowIndex')
       expect(scenario.assetReturns).toEqual(
         dataset.assetReturns.map((returns) => returns[row]),
       )
@@ -65,7 +68,9 @@ describe('createHistoricalBootstrapEngine', () => {
     const engine = createHistoricalBootstrapEngine(createDataset(), 456)
 
     for (let index = 0; index < sampleSize; index += 1) {
-      counts[engine.nextScenario().sourceRowIndex] += 1
+      const row = engine.nextScenario().sourceRowIndex
+      if (row === null) throw new Error('bootstrap must set sourceRowIndex')
+      counts[row] += 1
     }
 
     for (const count of counts) {
