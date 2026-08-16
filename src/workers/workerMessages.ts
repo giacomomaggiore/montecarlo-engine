@@ -1,6 +1,7 @@
 import type { AlignedDataset } from '../core/data/datasetTypes'
 import type { ParametricStudentTOptions } from '../core/simulation/parametricStudentT'
 import type {
+  SimulationAssetSelection,
   SimulationConfig,
   SimulationResult,
 } from '../core/simulation/simulationTypes'
@@ -28,6 +29,7 @@ export type RunRequestMessage = {
   readonly runId: string
   readonly dataset: AlignedDataset
   readonly config: SimulationConfig
+  readonly selection: SimulationAssetSelection
   readonly engineSelection: EngineSelection
 }
 
@@ -76,6 +78,10 @@ export function isResultMessage(
 // path * period work limit already allows (see runSimulation.ts).
 export function buildTransferList(result: SimulationResult): ArrayBuffer[] {
   const buffers: ArrayBuffer[] = [result.terminalWealth.buffer]
+
+  if (result.benchmarkTerminalWealth !== null) {
+    buffers.push(result.benchmarkTerminalWealth.buffer)
+  }
 
   for (const path of result.representativePaths) {
     buffers.push(path.values.buffer, path.priceLevels.buffer)

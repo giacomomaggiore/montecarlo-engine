@@ -1,5 +1,6 @@
 import type { DatasetIdentity, Frequency } from '../data/datasetTypes'
 import type { SimulationMetrics } from '../portfolio/metrics'
+import type { PortfolioTrade } from '../portfolio/rebalancing'
 import type { ValidationError, ValidationResult } from '../validation'
 
 export const MAX_ASSET_COUNT = 6
@@ -21,13 +22,27 @@ export type CashFlowConfig =
       readonly targetIncrease: number
     }
 
+export type RebalancingConfig =
+  | { readonly mode: 'none' }
+  | { readonly mode: 'time'; readonly everyPeriods: number }
+  | { readonly mode: 'toleranceBand'; readonly percentagePoints: number }
+
 export type SimulationConfig = {
   readonly weights: readonly number[]
   readonly initialInvestment: number
   readonly cashFlow: CashFlowConfig
+  readonly rebalancing?: RebalancingConfig
   readonly paths: number
   readonly periods: number
   readonly seed: number
+}
+
+// The aligned dataset can contain one optional benchmark column in addition
+// to portfolio holdings. This projection keeps the benchmark out of weights
+// while both engines still sample one joint return vector.
+export type SimulationAssetSelection = {
+  readonly portfolioAssetIndices: readonly number[]
+  readonly benchmarkAssetIndex: number | null
 }
 
 export type PeriodScenario = {
@@ -62,6 +77,7 @@ export type SimulationRunMetadata = {
   // so only the runner (which holds the AlignedDataset) can provide it.
   // ~13 KB for the full weekly release: negligible next to the path buffers.
   readonly datasetDates: readonly string[]
+  readonly benchmarkAssetId: string | null
   readonly algorithms: AlgorithmVersions
 }
 
@@ -77,6 +93,9 @@ export type RetainedPath = {
   // real values are nominal values divided by this series, per the Financial
   // Rules' "simulate nominal, deflate for display".
   readonly priceLevels: Float64Array
+  // Period 0 is always empty. Later entries preserve the canonical orders
+  // that Phase 7 will price and tax; they are never inferred from balances.
+  readonly trades: readonly (readonly PortfolioTrade[])[]
   readonly scenarios: readonly PeriodScenario[]
 }
 
@@ -125,6 +144,9 @@ export type SimulationFailure = {
 export type SimulationResult = {
   readonly metadata: SimulationRunMetadata
   readonly terminalWealth: Float64Array
+  // One terminal benchmark value per portfolio path. Kept without a full
+  // period matrix because value-averaging makes each benchmark path unique.
+  readonly benchmarkTerminalWealth: Float64Array | null
   // Cross-sectional performance metrics (Phase 4.2), computed streaming in
   // the runner's path loop -- see core/portfolio/metrics.ts for definitions.
   readonly metrics: SimulationMetrics
@@ -197,6 +219,7 @@ export function validateSimulationConfig(
 
   validateCashFlow(config.cashFlow, errors)
   validatePathsAndPeriods(config.paths, config.periods, frequency, errors)
+  validateRebalancing(config.rebalancing, config.periods, errors)
 
   if (!isUint32(config.seed)) {
     errors.push(
@@ -207,6 +230,42 @@ export function validateSimulationConfig(
   return errors.length === 0
     ? { ok: true, value: config }
     : { ok: false, errors }
+}
+
+function validateRebalancing(
+  rebalancing: RebalancingConfig | undefined,
+  periods: number,
+  errors: ValidationError[],
+): void {
+  if (rebalancing === undefined || rebalancing.mode === 'none') return
+
+  if (
+    rebalancing.mode === 'time' &&
+    (!Number.isInteger(rebalancing.everyPeriods) ||
+      rebalancing.everyPeriods < 1 ||
+      rebalancing.everyPeriods > periods)
+  ) {
+    errors.push(
+      error(
+        'config.rebalancing.everyPeriods',
+        'Rebalancing interval must be an integer within the simulation horizon.',
+      ),
+    )
+  }
+
+  if (
+    rebalancing.mode === 'toleranceBand' &&
+    (!Number.isFinite(rebalancing.percentagePoints) ||
+      rebalancing.percentagePoints <= 0 ||
+      rebalancing.percentagePoints > 100)
+  ) {
+    errors.push(
+      error(
+        'config.rebalancing.percentagePoints',
+        'Tolerance band must be greater than 0 and no more than 100 percentage points.',
+      ),
+    )
+  }
 }
 
 function validateCashFlow(

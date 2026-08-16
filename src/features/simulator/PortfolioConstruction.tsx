@@ -15,11 +15,13 @@ const MAX_SEARCH_RESULTS = 8
 export function PortfolioConstruction({
   assets,
   holdings,
+  benchmarkAssetId,
   errors,
   dispatch,
 }: {
   readonly assets: readonly AssetCatalogueRecord[]
   readonly holdings: readonly HoldingInput[]
+  readonly benchmarkAssetId: string | null
   readonly errors: readonly ValidationError[] | null
   readonly dispatch: (action: SimulatorInputsAction) => void
 }) {
@@ -179,6 +181,29 @@ export function PortfolioConstruction({
       </p>
       <FieldErrors errors={totalErrors} id="weights-total-errors" />
       <FieldErrors errors={historyErrors} id="history-errors" />
+
+      <label htmlFor="benchmark-select">Optional benchmark ETF</label>
+      <select
+        id="benchmark-select"
+        onChange={(event) =>
+          dispatch({
+            type: 'set-benchmark',
+            assetId: event.target.value === '' ? null : event.target.value,
+          })
+        }
+        value={benchmarkAssetId ?? ''}
+      >
+        <option value="">No benchmark</option>
+        {assets.map((asset) => (
+          <option key={asset.assetId} value={asset.assetId}>
+            {asset.ticker} - {asset.name}
+          </option>
+        ))}
+      </select>
+      <p className="input-hint">
+        The benchmark receives the portfolio&apos;s realised contributions but
+        is never included in its allocation.
+      </p>
     </fieldset>
   )
 }

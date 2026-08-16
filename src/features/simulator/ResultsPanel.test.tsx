@@ -30,6 +30,7 @@ function fixtureResult(): SimulationResult {
         baseCurrency: 'USD',
       },
       datasetDates: ['2020-01-05', '2020-01-12', '2020-01-19'],
+      benchmarkAssetId: null,
       algorithms: {
         model: 'historical-bootstrap-v1',
         prng: 'xoshiro128**-v1',
@@ -38,6 +39,7 @@ function fixtureResult(): SimulationResult {
       },
     },
     terminalWealth: new Float64Array([1210, 900]),
+    benchmarkTerminalWealth: null,
     metrics: {
       terminalWealth: {
         p10: 931,
@@ -60,6 +62,7 @@ function fixtureResult(): SimulationResult {
       },
       sharpeRatio: null,
       maxDrawdown: { p10: 0.02, p50: 0.05, p90: 0.09, availablePathCount: 2 },
+      benchmark: null,
     },
     representativePaths: [
       {
@@ -78,6 +81,7 @@ function fixtureResult(): SimulationResult {
         values: new Float64Array([1000, 1100, 1210]),
         contributions: new Float64Array([0, 0, 0]),
         priceLevels: new Float64Array([1, 1.1, 1.21]),
+        trades: [[], [], []],
         scenarios: [
           {
             assetReturns: [0.1],

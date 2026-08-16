@@ -884,3 +884,23 @@ Implemented and closed all Phase 4 subphases. The minimal fixed-demo shell is no
 ### Next step
 
 Phase 5: benchmark comparison. It should be implemented as a separate one-ETF buy-and-hold accumulator receiving the portfolio's actual per-path cash flows, including value-averaging flows, before Phase 6 rebalancing introduces trades.
+
+## 2026-08-16 - Phases 5 and 6: benchmark comparison and rebalancing
+
+### Scope completed
+
+- Added an optional one-ETF benchmark loaded in the same aligned joint dataset as the portfolio. Both engines sample the full holding-plus-benchmark universe, while the runner projects only portfolio columns into portfolio accounting.
+- The benchmark starts from the same initial investment and receives the portfolio's realised end-of-period contribution, including path-specific value-averaging contributions. It has no weights, rebalancing, costs, taxes, debt, or leverage.
+- Added paired benchmark terminal outcomes, terminal-difference p10/p50/p90, comparable-path count, and strict outperformance probability. No per-period benchmark matrix is retained; value averaging makes each benchmark trajectory path-specific, so a single chart line would be misleading and unnecessarily expensive.
+- Added `none`, time-based, and strict tolerance-band rebalancing controls. Rebalancing occurs after contributions, preserves equity, leaves `neutralReturn` and benchmark cash flows unchanged, and records canonical signed base-currency buy/sell orders for retained paths.
+- Added pure benchmark and rebalancing modules with hand-calculated timing, tolerance-boundary, zero-equity, value-conservation, runner projection, and value-averaging cash-flow tests.
+
+### Validation completed
+
+- Complete Vitest suite: **28 files, 245 tests passed**.
+- Playwright: **3 browser smoke tests passed**.
+- `npm run format`, `npm run lint`, and `npm run build` passed.
+
+### Next step
+
+Phase 7: transaction costs, then taxes. It can consume Phase 6's retained canonical trade lists directly, applying order costs before realized gains and preserving the existing benchmark as a frictionless comparison.

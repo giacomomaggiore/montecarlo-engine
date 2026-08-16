@@ -86,13 +86,14 @@ export function SimulatorPage() {
     if (!plan.ok) {
       return
     }
-    const { assetIds, config, engineSelection } = plan.value
+    const { assetIds, config, selection, engineSelection } = plan.value
     run({
       // The thunk defers the (possibly network-bound) dataset load to the
       // hook, which owns the loading-data state and its failure path.
       loadDataset: () =>
         loadAlignedDataset(assetIds, inputs.frequency, BASE_CURRENCY),
       config,
+      selection,
       engineSelection,
     })
   }
@@ -119,6 +120,7 @@ export function SimulatorPage() {
         <div className="input-workspace">
           <PortfolioConstruction
             assets={catalogueAssets}
+            benchmarkAssetId={inputs.benchmarkAssetId}
             dispatch={dispatch}
             errors={inputErrors}
             holdings={inputs.holdings}

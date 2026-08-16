@@ -30,7 +30,7 @@ export function executeRun(
   request: RunRequestMessage,
   emit: (message: WorkerResponseMessage) => void,
 ): void {
-  const { runId, dataset, config, engineSelection } = request
+  const { runId, dataset, config, selection, engineSelection } = request
 
   const datasetResult = validateAlignedDataset(dataset)
   if (!datasetResult.ok) {
@@ -103,6 +103,7 @@ export function executeRun(
     engine,
     dataset,
     config,
+    selection,
     modelVersion,
     prngVersion: XOSHIRO128_STAR_STAR_VERSION,
     batchSize: computeBatchSize(config.paths),

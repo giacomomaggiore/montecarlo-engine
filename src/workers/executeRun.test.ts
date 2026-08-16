@@ -42,6 +42,7 @@ function createRequest(
     runId: 'run-1',
     dataset: createPlaceholderDataset(),
     config: createConfig(),
+    selection: { portfolioAssetIndices: [0, 1], benchmarkAssetIndex: null },
     engineSelection: { engine: 'bootstrap' },
     ...overrides,
   }

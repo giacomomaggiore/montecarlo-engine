@@ -26,9 +26,11 @@ function fakeResult(): SimulationResult {
         baseCurrency: 'USD',
       },
       datasetDates: ['2020-01-05'],
+      benchmarkAssetId: null,
       algorithms: { model: 'm', prng: 'p', quantile: 'q', metrics: 'x' },
     },
     terminalWealth: new Float64Array([1]),
+    benchmarkTerminalWealth: null,
     metrics: {
       terminalWealth: null,
       lossProbability: 0,
@@ -37,6 +39,7 @@ function fakeResult(): SimulationResult {
       annualizedVolatility: null,
       sharpeRatio: null,
       maxDrawdown: null,
+      benchmark: null,
     },
     representativePaths: REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
       (quantileLevel) => ({

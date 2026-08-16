@@ -9,12 +9,18 @@ import {
   stepPortfolioPeriod,
 } from '../portfolio/cashFlows'
 import {
+  initializeBenchmark,
+  stepBenchmarkPeriod,
+} from '../portfolio/benchmark'
+import { rebalancePortfolio } from '../portfolio/rebalancing'
+import {
   computeAnnualizedIrr,
   computeCagr,
   computeTerminalWealthPercentiles,
   createPathMetricsAccumulator,
   METRICS_VERSION,
   summarizeAcrossPaths,
+  summarizeBenchmarkComparison,
 } from '../portfolio/metrics'
 import type { SimulationMetrics } from '../portfolio/metrics'
 import type { ValidationResult } from '../validation'
@@ -23,6 +29,7 @@ import type {
   PeriodScenario,
   RepresentativePath,
   RetainedPath,
+  SimulationAssetSelection,
   SimulationConfig,
   SimulationFailure,
   SimulationResult,
@@ -48,6 +55,9 @@ export type RunSimulationInput = {
   // only knows its own quantile and metrics rules.
   readonly modelVersion: string
   readonly prngVersion: string
+  // Omitted only by legacy/direct callers: the identity projection preserves
+  // the existing "every dataset column is a holding" behavior.
+  readonly selection?: SimulationAssetSelection
   // Optional progress cadence for a Worker host (Phase 2). Defaults to one
   // implicit batch covering the whole run, so every call site that omits
   // these two fields keeps its exact pre-Phase-2 behavior unchanged.
@@ -63,9 +73,18 @@ export function runSimulation(
 ): ValidationResult<SimulationResult> {
   const { engine, dataset, config } = input
 
+  const selection = input.selection ?? {
+    portfolioAssetIndices: dataset.assetIds.map((_, index) => index),
+    benchmarkAssetIndex: null,
+  }
+  const selectionResult = validateSelection(selection, dataset.assetIds.length)
+  if (!selectionResult.ok) {
+    return selectionResult
+  }
+
   const configResult = validateSimulationConfig(
     config,
-    dataset.assetIds.length,
+    selection.portfolioAssetIndices.length,
     dataset.identity.frequency,
   )
   if (!configResult.ok) {
@@ -98,6 +117,8 @@ export function runSimulation(
   // paths' copies survive, so nothing here grows the Worker transfer.
   const priceLevelByPeriod = new Float32Array(periodCount * paths)
   const terminalWealth = new Float64Array(paths)
+  const benchmarkTerminalWealth =
+    selection.benchmarkAssetIndex === null ? null : new Float64Array(paths)
 
   // Per-path metric values (Phase 4.2), NaN = "unavailable for this path".
   // O(N) space each — the price of reporting metric DISTRIBUTIONS across all
@@ -137,12 +158,19 @@ export function runSimulation(
       ? new Float64Array(periodCount)
       : null
     const retainedScenarios: PeriodScenario[] | null = isRetained ? [] : null
+    const retainedTrades:
+      (readonly import('../portfolio/rebalancing').PortfolioTrade[])[] | null =
+      isRetained ? Array.from({ length: periodCount }, () => []) : null
 
     let holdings: readonly number[] = allocateInitialInvestment(
       initialInvestment,
       weights,
     )
     let equity = sum(holdings)
+    let benchmarkValue =
+      selection.benchmarkAssetIndex === null
+        ? null
+        : initializeBenchmark(initialInvestment)
     equityByPeriod[pathIndex] = equity
     priceLevelByPeriod[pathIndex] = 1
     retainedValues?.set([equity], 0)
@@ -163,9 +191,15 @@ export function runSimulation(
 
     for (let periodIndex = 1; periodIndex <= periods; periodIndex += 1) {
       const scenario = engine.nextScenario()
+      const portfolioScenario: PeriodScenario = {
+        ...scenario,
+        assetReturns: selection.portfolioAssetIndices.map(
+          (assetIndex) => scenario.assetReturns[assetIndex],
+        ),
+      }
       const result = stepPortfolioPeriod(
         holdings,
-        scenario,
+        portfolioScenario,
         cashFlow,
         weights,
         periodIndex,
@@ -183,7 +217,36 @@ export function runSimulation(
         break
       }
 
-      holdings = result.holdings
+      if (benchmarkValue !== null && selection.benchmarkAssetIndex !== null) {
+        const benchmarkResult = stepBenchmarkPeriod(
+          benchmarkValue,
+          scenario.assetReturns[selection.benchmarkAssetIndex],
+          result.contribution,
+        )
+        if (!Number.isFinite(benchmarkResult.value)) {
+          failures.push({
+            pathIndex,
+            periodIndex,
+            code: 'non-finite-benchmark',
+            message: 'Benchmark value became non-finite during accounting.',
+          })
+          failedAtPeriod = periodIndex
+          break
+        }
+        benchmarkValue = benchmarkResult.value
+      }
+
+      // Rebalancing is a frictionless post-contribution value reshuffle in
+      // Phase 6. It changes next-period exposure but not this period's equity,
+      // contribution, or neutral return.
+      const rebalanced = rebalancePortfolio(
+        result.holdings,
+        weights,
+        config.rebalancing,
+        periodIndex,
+      )
+
+      holdings = rebalanced.holdings
       equity = result.equity
       equityByPeriod[periodIndex * paths + pathIndex] = equity
 
@@ -207,6 +270,9 @@ export function runSimulation(
       // the loop, are copied from the float32 buffer instead.
       retainedPriceLevels?.set([priceLevel], periodIndex)
       retainedScenarios?.push(scenario)
+      if (retainedTrades !== null) {
+        retainedTrades[periodIndex] = rebalanced.trades
+      }
     }
 
     const failed = failedAtPeriod !== -1
@@ -230,6 +296,10 @@ export function runSimulation(
     }
 
     terminalWealth[pathIndex] = failed ? NaN : equity
+    if (benchmarkTerminalWealth !== null) {
+      benchmarkTerminalWealth[pathIndex] =
+        failed || benchmarkValue === null ? NaN : benchmarkValue
+    }
 
     // Per-path metric values. A failed path has NO defined metrics (NaN
     // everywhere) but DOES count as a loss: it certainly did not beat its
@@ -277,13 +347,15 @@ export function runSimulation(
       retainedValues &&
       retainedContributions &&
       retainedPriceLevels &&
-      retainedScenarios
+      retainedScenarios &&
+      retainedTrades
     ) {
       retainedPaths.push({
         pathIndex,
         values: retainedValues,
         contributions: retainedContributions,
         priceLevels: retainedPriceLevels,
+        trades: retainedTrades,
         scenarios: retainedScenarios,
       })
     }
@@ -310,6 +382,10 @@ export function runSimulation(
     annualizedVolatility: summarizeAcrossPaths(volatilityPerPath),
     sharpeRatio: summarizeAcrossPaths(sharpePerPath),
     maxDrawdown: summarizeAcrossPaths(drawdownPerPath),
+    benchmark:
+      benchmarkTerminalWealth === null
+        ? null
+        : summarizeBenchmarkComparison(terminalWealth, benchmarkTerminalWealth),
   }
 
   return {
@@ -321,6 +397,10 @@ export function runSimulation(
         // A copy, not the dataset's own array reference: the result must stay
         // self-contained once the dataset is released.
         datasetDates: [...dataset.dates],
+        benchmarkAssetId:
+          selection.benchmarkAssetIndex === null
+            ? null
+            : dataset.assetIds[selection.benchmarkAssetIndex],
         algorithms: {
           model: input.modelVersion,
           prng: input.prngVersion,
@@ -329,6 +409,7 @@ export function runSimulation(
         },
       },
       terminalWealth,
+      benchmarkTerminalWealth,
       metrics,
       representativePaths: selectRepresentativePaths(
         terminalWealth,
@@ -341,6 +422,60 @@ export function runSimulation(
       failures,
     },
   }
+}
+
+function validateSelection(
+  selection: SimulationAssetSelection,
+  datasetAssetCount: number,
+): ValidationResult<SimulationAssetSelection> {
+  const errors = [] as { code: string; message: string }[]
+  const seenIndices = new Set<number>()
+
+  for (const assetIndex of selection.portfolioAssetIndices) {
+    if (
+      !Number.isInteger(assetIndex) ||
+      assetIndex < 0 ||
+      assetIndex >= datasetAssetCount
+    ) {
+      errors.push({
+        code: 'selection.portfolioAssetIndices',
+        message:
+          'Portfolio asset indexes must identify loaded dataset columns.',
+      })
+      continue
+    }
+    if (seenIndices.has(assetIndex)) {
+      errors.push({
+        code: 'selection.portfolioAssetIndices.duplicate',
+        message: 'Portfolio asset indexes must be unique.',
+      })
+    }
+    seenIndices.add(assetIndex)
+  }
+
+  if (selection.portfolioAssetIndices.length === 0) {
+    errors.push({
+      code: 'selection.portfolioAssetIndices.empty',
+      message: 'Select at least one portfolio asset.',
+    })
+  }
+
+  const benchmarkIndex = selection.benchmarkAssetIndex
+  if (
+    benchmarkIndex !== null &&
+    (!Number.isInteger(benchmarkIndex) ||
+      benchmarkIndex < 0 ||
+      benchmarkIndex >= datasetAssetCount)
+  ) {
+    errors.push({
+      code: 'selection.benchmarkAssetIndex',
+      message: 'Benchmark index must identify a loaded dataset column.',
+    })
+  }
+
+  return errors.length === 0
+    ? { ok: true, value: selection }
+    : { ok: false, errors }
 }
 
 // For each of REPRESENTATIVE_PATH_QUANTILE_LEVELS (p1, p10, p25, p50, p75,

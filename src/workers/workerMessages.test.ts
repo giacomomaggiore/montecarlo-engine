@@ -13,6 +13,7 @@ function createResult(retainedPathCount: number): SimulationResult {
     values: new Float64Array([1, 2, 3]),
     contributions: new Float64Array([0, 1, 1]),
     priceLevels: new Float64Array([1, 1.001, 1.002]),
+    trades: [[], [], []],
     scenarios: [],
   }))
   const representativePaths = REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
@@ -42,6 +43,7 @@ function createResult(retainedPathCount: number): SimulationResult {
         baseCurrency: 'USD',
       },
       datasetDates: ['2020-01-05', '2020-01-12'],
+      benchmarkAssetId: null,
       algorithms: {
         model: 'test',
         prng: 'test',
@@ -50,6 +52,7 @@ function createResult(retainedPathCount: number): SimulationResult {
       },
     },
     terminalWealth: new Float64Array([1000]),
+    benchmarkTerminalWealth: null,
     metrics: {
       terminalWealth: null,
       lossProbability: 0,
@@ -58,6 +61,7 @@ function createResult(retainedPathCount: number): SimulationResult {
       annualizedVolatility: null,
       sharpeRatio: null,
       maxDrawdown: null,
+      benchmark: null,
     },
     representativePaths,
     retainedPaths,

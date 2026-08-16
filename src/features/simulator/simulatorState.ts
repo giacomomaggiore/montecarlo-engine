@@ -8,6 +8,8 @@ import {
   MAX_PATHS,
   MAX_SIMULATION_WORK,
   MAX_YEARS,
+  type SimulationAssetSelection,
+  type RebalancingConfig,
   validateSimulationConfig,
 } from '../../core/simulation/simulationTypes'
 import type {
@@ -31,6 +33,7 @@ import type { EngineSelection } from '../../workers/workerMessages'
 
 export type EngineChoice = 'bootstrap' | 'studentT'
 export type CashFlowMode = CashFlowConfig['mode']
+export type RebalancingMode = RebalancingConfig['mode']
 
 export type HoldingInput = {
   readonly assetId: string
@@ -55,6 +58,7 @@ export type ParametricInputs = {
 
 export type SimulatorInputs = {
   readonly holdings: readonly HoldingInput[]
+  readonly benchmarkAssetId: string | null
   readonly engine: EngineChoice
   readonly seed: string
   readonly paths: string
@@ -66,6 +70,9 @@ export type SimulatorInputs = {
   readonly cashFlowMode: CashFlowMode
   readonly dcaAmount: string
   readonly vaTargetIncrease: string
+  readonly rebalancingMode: RebalancingMode
+  readonly rebalancingEveryPeriods: string
+  readonly rebalancingBandPercentagePoints: string
   readonly parametric: ParametricInputs
   // Display-only toggle (never sent to the Worker): nominal accounting
   // values versus per-path inflation-deflated real values.
@@ -75,6 +82,7 @@ export type SimulatorInputs = {
 // Frontend-spec defaults: weekly frequency, 2,000 paths, 10 years.
 export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   holdings: [],
+  benchmarkAssetId: null,
   engine: 'bootstrap',
   seed: '42',
   paths: '2000',
@@ -84,6 +92,9 @@ export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   cashFlowMode: 'lumpSum',
   dcaAmount: '100',
   vaTargetIncrease: '100',
+  rebalancingMode: 'none',
+  rebalancingEveryPeriods: '52',
+  rebalancingBandPercentagePoints: '5',
   parametric: {
     returnMode: 'historical',
     nuMode: 'automatic',
@@ -102,6 +113,8 @@ export type ScalarInputField =
   | 'initialInvestment'
   | 'dcaAmount'
   | 'vaTargetIncrease'
+  | 'rebalancingEveryPeriods'
+  | 'rebalancingBandPercentagePoints'
 
 export type ParametricScalarField =
   'manualNu' | 'annualInflationPercent' | 'annualRiskFreePercent'
@@ -109,6 +122,7 @@ export type ParametricScalarField =
 export type SimulatorInputsAction =
   | { readonly type: 'add-holding'; readonly assetId: string }
   | { readonly type: 'remove-holding'; readonly assetId: string }
+  | { readonly type: 'set-benchmark'; readonly assetId: string | null }
   | {
       readonly type: 'set-holding-weight'
       readonly assetId: string
@@ -126,6 +140,7 @@ export type SimulatorInputsAction =
       readonly value: string
     }
   | { readonly type: 'set-cash-flow-mode'; readonly mode: CashFlowMode }
+  | { readonly type: 'set-rebalancing-mode'; readonly mode: RebalancingMode }
   | {
       readonly type: 'set-parametric-return-mode'
       readonly mode: ParametricInputs['returnMode']
@@ -183,6 +198,9 @@ export function reduceSimulatorInputs(
         ),
       }
 
+    case 'set-benchmark':
+      return { ...state, benchmarkAssetId: action.assetId }
+
     case 'set-holding-weight':
       return {
         ...state,
@@ -215,6 +233,9 @@ export function reduceSimulatorInputs(
     case 'set-cash-flow-mode':
       return { ...state, cashFlowMode: action.mode }
 
+    case 'set-rebalancing-mode':
+      return { ...state, rebalancingMode: action.mode }
+
     case 'set-parametric-return-mode':
       return {
         ...state,
@@ -244,6 +265,7 @@ export function reduceSimulatorInputs(
 
 export type RunPlan = {
   readonly assetIds: readonly string[]
+  readonly selection: SimulationAssetSelection
   readonly config: SimulationConfig
   readonly engineSelection: EngineSelection
 }
@@ -340,12 +362,13 @@ export function deriveRunPlan(
   // The catalogue spans give a preview of the joint history; the loader's
   // finite-row alignment remains the binding check at Run time (interior
   // gaps are invisible to span arithmetic — see assetCatalogue.ts).
-  const selectedRecords = inputs.holdings
-    .map((holding) =>
-      catalogueAssets.find((record) => record.assetId === holding.assetId),
+  const selectedIds = selectedAssetIds(inputs)
+  const selectedRecords = selectedIds
+    .map((assetId) =>
+      catalogueAssets.find((record) => record.assetId === assetId),
     )
     .filter((record): record is AssetCatalogueRecord => record !== undefined)
-  if (selectedRecords.length === inputs.holdings.length) {
+  if (selectedRecords.length === selectedIds.length) {
     const estimate = estimateCommonHistory(selectedRecords, inputs.frequency)
     if (estimate !== null && !estimate.meetsMinimum) {
       errors.push(
@@ -355,6 +378,10 @@ export function deriveRunPlan(
         ),
       )
     }
+  } else if (inputs.benchmarkAssetId !== null) {
+    errors.push(
+      inputError('inputs.benchmark', 'Select a benchmark from the catalogue.'),
+    )
   }
 
   // --- Simulation inputs --------------------------------------------------
@@ -444,6 +471,46 @@ export function deriveRunPlan(
       )
     } else {
       cashFlow = { mode: 'valueAveraging', targetIncrease }
+    }
+  }
+
+  let rebalancing: RebalancingConfig | null = null
+  if (inputs.rebalancingMode === 'none') {
+    rebalancing = { mode: 'none' }
+  } else if (inputs.rebalancingMode === 'time') {
+    const everyPeriods = parseFiniteNumber(inputs.rebalancingEveryPeriods)
+    if (
+      everyPeriods === null ||
+      !Number.isInteger(everyPeriods) ||
+      everyPeriods < 1 ||
+      (periods !== null && everyPeriods > periods)
+    ) {
+      errors.push(
+        inputError(
+          'inputs.rebalancing.everyPeriods',
+          'Rebalancing interval must be a whole number within the horizon.',
+        ),
+      )
+    } else {
+      rebalancing = { mode: 'time', everyPeriods }
+    }
+  } else {
+    const percentagePoints = parseFiniteNumber(
+      inputs.rebalancingBandPercentagePoints,
+    )
+    if (
+      percentagePoints === null ||
+      percentagePoints <= 0 ||
+      percentagePoints > 100
+    ) {
+      errors.push(
+        inputError(
+          'inputs.rebalancing.percentagePoints',
+          'Tolerance band must be greater than 0 and no more than 100 percentage points.',
+        ),
+      )
+    } else {
+      rebalancing = { mode: 'toleranceBand', percentagePoints }
     }
   }
 
@@ -539,6 +606,7 @@ export function deriveRunPlan(
     weights,
     initialInvestment: initialInvestment as number,
     cashFlow: cashFlow as CashFlowConfig,
+    rebalancing: rebalancing as RebalancingConfig,
     paths: paths as number,
     periods: periods as number,
     seed: seed as number,
@@ -555,10 +623,35 @@ export function deriveRunPlan(
   return {
     ok: true,
     value: {
-      assetIds: inputs.holdings.map((holding) => holding.assetId),
+      assetIds: selectedAssetIds(inputs),
+      selection: selectionForInputs(inputs),
       config,
       engineSelection: engineSelection as EngineSelection,
     },
+  }
+}
+
+function selectedAssetIds(inputs: SimulatorInputs): readonly string[] {
+  const assetIds = inputs.holdings.map((holding) => holding.assetId)
+  if (
+    inputs.benchmarkAssetId !== null &&
+    !assetIds.includes(inputs.benchmarkAssetId)
+  ) {
+    assetIds.push(inputs.benchmarkAssetId)
+  }
+  return assetIds
+}
+
+function selectionForInputs(inputs: SimulatorInputs): SimulationAssetSelection {
+  const assetIds = selectedAssetIds(inputs)
+  return {
+    portfolioAssetIndices: inputs.holdings.map((holding) =>
+      assetIds.indexOf(holding.assetId),
+    ),
+    benchmarkAssetIndex:
+      inputs.benchmarkAssetId === null
+        ? null
+        : assetIds.indexOf(inputs.benchmarkAssetId),
   }
 }
 

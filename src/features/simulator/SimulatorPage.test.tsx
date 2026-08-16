@@ -115,6 +115,7 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
       weights: [1],
       initialInvestment: 10_000,
       cashFlow: { mode: 'lumpSum' },
+      rebalancing: { mode: 'none' },
       paths: 2000,
       periods: 520,
       seed: 42,

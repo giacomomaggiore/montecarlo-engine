@@ -158,6 +158,38 @@ describe('deriveRunPlan — success', () => {
       options: { annualInflation: 0.02, annualRiskFreeRate: 0.03 },
     })
   })
+
+  it('loads a benchmark in the joint universe without adding a portfolio weight', () => {
+    const result = deriveRunPlan(
+      validInputs({ benchmarkAssetId: 'AGG' }),
+      CATALOGUE,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.value.assetIds).toEqual(['SPY', 'AGG'])
+    expect(result.value.selection).toEqual({
+      portfolioAssetIndices: [0, 1],
+      benchmarkAssetIndex: 1,
+    })
+    expect(result.value.config.weights).toEqual([0.6, 0.4])
+  })
+
+  it('derives a time rebalancing configuration', () => {
+    const result = deriveRunPlan(
+      validInputs({
+        rebalancingMode: 'time',
+        rebalancingEveryPeriods: '52',
+      }),
+      CATALOGUE,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.config.rebalancing).toEqual({
+      mode: 'time',
+      everyPeriods: 52,
+    })
+  })
 })
 
 describe('deriveRunPlan — field-addressable failures', () => {
@@ -276,6 +308,16 @@ describe('deriveRunPlan — field-addressable failures', () => {
       ],
     }
     expectSingleErrorCode(missingReturn, 'inputs.parametricReturn.AGG')
+  })
+
+  it('rejects a zero tolerance band', () => {
+    expectSingleErrorCode(
+      validInputs({
+        rebalancingMode: 'toleranceBand',
+        rebalancingBandPercentagePoints: '0',
+      }),
+      'inputs.rebalancing.percentagePoints',
+    )
   })
 })
 

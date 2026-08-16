@@ -3,7 +3,7 @@ import type { AlignedDataset } from '../data/datasetTypes'
 import { createHistoricalBootstrapEngine } from './historicalBootstrap'
 import { RETAINED_PATH_COUNT, runSimulation } from './runSimulation'
 import type { SimulationEngine } from './simulationEngine'
-import type { SimulationConfig } from './simulationTypes'
+import type { PeriodScenario, SimulationConfig } from './simulationTypes'
 import { MAX_PATHS } from './simulationTypes'
 
 function createDataset(): AlignedDataset {
@@ -295,5 +295,131 @@ describe('runSimulation', () => {
     expect(Array.from(withProgress.value.terminalWealth)).toEqual(
       Array.from(unbatched.value.terminalWealth),
     )
+  })
+
+  it('compounds a benchmark from the portfolio value-averaging cash flows', () => {
+    const dataset = createDataset()
+    const scenarios: PeriodScenario[] = [
+      {
+        assetReturns: [-0.1, 0.1],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 0,
+      },
+      {
+        assetReturns: [0.2, -0.1],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 1,
+      },
+    ]
+    let scenarioIndex = 0
+    const engine: SimulationEngine = {
+      nextScenario: () => scenarios[scenarioIndex++],
+    }
+
+    const result = runSimulation({
+      engine,
+      dataset,
+      config: createConfig({
+        weights: [1],
+        paths: 1,
+        periods: 2,
+        cashFlow: { mode: 'valueAveraging', targetIncrease: 200 },
+      }),
+      selection: { portfolioAssetIndices: [0], benchmarkAssetIndex: 1 },
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+
+    if (!result.ok) throw new Error('expected a successful run')
+
+    // Portfolio: 1,000 * 0.9 = 900, then the target 1,200 requires a 300
+    // contribution. Next period 1,200 * 1.2 = 1,440, already above its
+    // 1,400 target, so it receives zero. Benchmark: 1,000 * 1.1 + 300 =
+    // 1,400, then 1,400 * 0.9 + 0 = 1,260.
+    expect(Array.from(result.value.retainedPaths[0].contributions)).toEqual([
+      0, 300, 0,
+    ])
+    expect(Array.from(result.value.benchmarkTerminalWealth ?? [])).toEqual([
+      1260,
+    ])
+    expect(result.value.metrics.benchmark).toEqual({
+      terminalDifference: {
+        p10: 180,
+        p50: 180,
+        p90: 180,
+        availablePathCount: 1,
+      },
+      outperformanceProbability: 1,
+      comparablePathCount: 1,
+    })
+    expect(result.value.metadata.benchmarkAssetId).toBe('BBB')
+  })
+
+  it('rejects an invalid benchmark projection before simulating', () => {
+    const dataset = createDataset()
+    const result = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 0),
+      dataset,
+      config: createConfig(),
+      selection: { portfolioAssetIndices: [0, 1], benchmarkAssetIndex: 2 },
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.map((error) => error.code)).toContain(
+        'selection.benchmarkAssetIndex',
+      )
+    }
+  })
+
+  it('records frictionless post-contribution rebalancing trades', () => {
+    const dataset = createDataset()
+    const scenarios: PeriodScenario[] = [
+      {
+        assetReturns: [0.4, -0.4],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 0,
+      },
+      {
+        assetReturns: [0.4, -0.4],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 1,
+      },
+    ]
+    let scenarioIndex = 0
+    const result = runSimulation({
+      engine: { nextScenario: () => scenarios[scenarioIndex++] },
+      dataset,
+      config: createConfig({
+        paths: 1,
+        periods: 2,
+        rebalancing: { mode: 'time', everyPeriods: 1 },
+      }),
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+
+    if (!result.ok) throw new Error('expected a successful run')
+
+    // Each period leaves 700/300 after returns. The ledger sells 200 of asset
+    // 0 and buys 200 of asset 1, restoring 500/500 without changing equity.
+    expect(result.value.terminalWealth[0]).toBe(1000)
+    expect(result.value.retainedPaths[0].trades).toEqual([
+      [],
+      [
+        { assetIndex: 0, value: -200 },
+        { assetIndex: 1, value: 200 },
+      ],
+      [
+        { assetIndex: 0, value: -200 },
+        { assetIndex: 1, value: 200 },
+      ],
+    ])
   })
 })

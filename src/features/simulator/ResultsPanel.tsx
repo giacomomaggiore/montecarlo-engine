@@ -32,6 +32,18 @@ function formatPercentile(level: number): string {
   return `p${Math.round(level * 100)}`
 }
 
+function formatTrades(
+  trades: readonly { readonly assetIndex: number; readonly value: number }[],
+): string {
+  if (trades.length === 0) return 'none'
+  return trades
+    .map(
+      (trade) =>
+        `Asset ${trade.assetIndex + 1} ${trade.value > 0 ? 'buy' : 'sell'} ${currency.format(Math.abs(trade.value))}`,
+    )
+    .join('; ')
+}
+
 // One row of the metric-distribution table. A null summary renders as N/A
 // WITH its reason, per the spec — a blank cell hides information, a bare
 // "N/A" invites wrong guesses.
@@ -175,6 +187,60 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
             ' — structurally zero until leverage exists: an unleveraged long-only portfolio cannot go insolvent.'}
         </dd>
       </dl>
+
+      {metrics.benchmark !== null &&
+        result.metadata.benchmarkAssetId !== null && (
+          <section aria-labelledby="benchmark-heading">
+            <h4 id="benchmark-heading">
+              Benchmark comparison: {result.metadata.benchmarkAssetId}
+            </h4>
+            {metrics.benchmark.terminalDifference === null ? (
+              <p>
+                N/A — no path completed with both a portfolio and benchmark
+                terminal value.
+              </p>
+            ) : (
+              <table className="metrics-table">
+                <caption>
+                  Portfolio minus benchmark terminal wealth (nominal)
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">p10</th>
+                    <th scope="col">Median</th>
+                    <th scope="col">p90</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      {currency.format(
+                        metrics.benchmark.terminalDifference.p10,
+                      )}
+                    </td>
+                    <td>
+                      {currency.format(
+                        metrics.benchmark.terminalDifference.p50,
+                      )}
+                    </td>
+                    <td>
+                      {currency.format(
+                        metrics.benchmark.terminalDifference.p90,
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+            <p className="input-hint">
+              {metrics.benchmark.outperformanceProbability === null
+                ? 'No comparable paths completed.'
+                : `${percent.format(metrics.benchmark.outperformanceProbability)} of ${metrics.benchmark.comparablePathCount} comparable paths outperformed.`}{' '}
+              The benchmark received this portfolio&apos;s realised external
+              contributions on the same simulated dates.
+            </p>
+          </section>
+        )}
     </section>
   )
 }
@@ -244,6 +310,7 @@ function PathInspector({
                 <th scope="col">Equity</th>
                 {displayMode === 'real' && <th scope="col">Real equity</th>}
                 <th scope="col">Contribution</th>
+                <th scope="col">Trades</th>
                 <th scope="col">Price level</th>
               </tr>
             </thead>
@@ -281,6 +348,7 @@ function PathInspector({
                         ? currency.format(selected.contributions[periodIndex])
                         : '—'}
                     </td>
+                    <td>{formatTrades(selected.trades[periodIndex] ?? [])}</td>
                     <td>
                       {Number.isFinite(priceLevel)
                         ? priceLevel.toFixed(4)
@@ -319,8 +387,9 @@ export function ResultsPanel({
         Completed run: {result.metadata.algorithms.model}, seed {config.seed},{' '}
         {config.paths.toLocaleString('en-US')} paths x {config.periods} periods
         (~{Math.round(config.periods / periodsPerYear)} years), dataset{' '}
-        {result.metadata.dataset.version}. Edits made to the settings above do
-        not apply until the next run.
+        {result.metadata.dataset.version}, rebalancing{' '}
+        {config.rebalancing?.mode ?? 'none'}. Edits made to the settings above
+        do not apply until the next run.
       </p>
 
       {result.failures.length > 0 && (

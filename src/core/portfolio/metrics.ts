@@ -66,6 +66,13 @@ export type SimulationMetrics = {
   readonly annualizedVolatility: MetricSummary | null
   readonly sharpeRatio: MetricSummary | null
   readonly maxDrawdown: MetricSummary | null
+  readonly benchmark: BenchmarkMetrics | null
+}
+
+export type BenchmarkMetrics = {
+  readonly terminalDifference: MetricSummary | null
+  readonly outperformanceProbability: number | null
+  readonly comparablePathCount: number
 }
 
 // ---------------------------------------------------------------------------
@@ -351,5 +358,45 @@ export function computeTerminalWealthPercentiles(
     p50: computeQuantile(finiteValues, 0.5),
     p75: computeQuantile(finiteValues, 0.75),
     p90: computeQuantile(finiteValues, 0.9),
+  }
+}
+
+// Compare paired portfolio and benchmark terminal values. A path is usable
+// only when both accounts completed with finite values; ties are not wins.
+export function summarizeBenchmarkComparison(
+  portfolioTerminalWealth: Float64Array,
+  benchmarkTerminalWealth: Float64Array,
+): BenchmarkMetrics {
+  const terminalDifferences = new Float64Array(portfolioTerminalWealth.length)
+  terminalDifferences.fill(NaN)
+  let comparablePathCount = 0
+  let outperformanceCount = 0
+
+  for (
+    let pathIndex = 0;
+    pathIndex < portfolioTerminalWealth.length;
+    pathIndex += 1
+  ) {
+    const portfolioValue = portfolioTerminalWealth[pathIndex]
+    const benchmarkValue = benchmarkTerminalWealth[pathIndex]
+    if (!Number.isFinite(portfolioValue) || !Number.isFinite(benchmarkValue)) {
+      continue
+    }
+
+    const difference = portfolioValue - benchmarkValue
+    terminalDifferences[pathIndex] = difference
+    comparablePathCount += 1
+    if (difference > 0) {
+      outperformanceCount += 1
+    }
+  }
+
+  return {
+    terminalDifference: summarizeAcrossPaths(terminalDifferences),
+    outperformanceProbability:
+      comparablePathCount === 0
+        ? null
+        : outperformanceCount / comparablePathCount,
+    comparablePathCount,
   }
 }

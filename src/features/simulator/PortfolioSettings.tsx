@@ -2,6 +2,7 @@ import type { ValidationError } from '../../core/validation'
 import { describedBy, errorsForCode } from './simulatorState'
 import type {
   CashFlowMode,
+  RebalancingMode,
   SimulatorInputs,
   SimulatorInputsAction,
 } from './simulatorState'
@@ -19,6 +20,12 @@ const CASH_FLOW_LABELS: Record<CashFlowMode, string> = {
   valueAveraging: 'Value averaging (contribute up to a target path)',
 }
 
+const REBALANCING_LABELS: Record<RebalancingMode, string> = {
+  none: 'None',
+  time: 'Every number of periods',
+  toleranceBand: 'When allocation drift exceeds a band',
+}
+
 export function PortfolioSettings({
   inputs,
   errors,
@@ -31,6 +38,14 @@ export function PortfolioSettings({
   const initialErrors = errorsForCode(errors, 'inputs.initialInvestment')
   const dcaErrors = errorsForCode(errors, 'inputs.dcaAmount')
   const vaErrors = errorsForCode(errors, 'inputs.vaTargetIncrease')
+  const rebalancePeriodErrors = errorsForCode(
+    errors,
+    'inputs.rebalancing.everyPeriods',
+  )
+  const rebalanceBandErrors = errorsForCode(
+    errors,
+    'inputs.rebalancing.percentagePoints',
+  )
 
   return (
     <fieldset className="input-section">
@@ -122,6 +137,80 @@ export function PortfolioSettings({
             value={inputs.vaTargetIncrease}
           />
           <FieldErrors errors={vaErrors} id="vaTargetIncrease-errors" />
+        </div>
+      )}
+
+      <fieldset className="radio-group">
+        <legend>Rebalancing</legend>
+        {(Object.keys(REBALANCING_LABELS) as RebalancingMode[]).map((mode) => (
+          <label key={mode}>
+            <input
+              checked={inputs.rebalancingMode === mode}
+              name="rebalancing-mode"
+              onChange={() => dispatch({ type: 'set-rebalancing-mode', mode })}
+              type="radio"
+              value={mode}
+            />
+            {REBALANCING_LABELS[mode]}
+          </label>
+        ))}
+      </fieldset>
+
+      {inputs.rebalancingMode === 'time' && (
+        <div className="labelled-field">
+          <label htmlFor="field-rebalancingEveryPeriods">
+            Rebalance every number of periods
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'rebalancingEveryPeriods-errors',
+              rebalancePeriodErrors,
+            )}
+            aria-invalid={rebalancePeriodErrors.length > 0}
+            id="field-rebalancingEveryPeriods"
+            inputMode="numeric"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'rebalancingEveryPeriods',
+                value: event.target.value,
+              })
+            }
+            value={inputs.rebalancingEveryPeriods}
+          />
+          <FieldErrors
+            errors={rebalancePeriodErrors}
+            id="rebalancingEveryPeriods-errors"
+          />
+        </div>
+      )}
+
+      {inputs.rebalancingMode === 'toleranceBand' && (
+        <div className="labelled-field">
+          <label htmlFor="field-rebalancingBandPercentagePoints">
+            Drift band (percentage points, strictly beyond)
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'rebalancingBandPercentagePoints-errors',
+              rebalanceBandErrors,
+            )}
+            aria-invalid={rebalanceBandErrors.length > 0}
+            id="field-rebalancingBandPercentagePoints"
+            inputMode="decimal"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'rebalancingBandPercentagePoints',
+                value: event.target.value,
+              })
+            }
+            value={inputs.rebalancingBandPercentagePoints}
+          />
+          <FieldErrors
+            errors={rebalanceBandErrors}
+            id="rebalancingBandPercentagePoints-errors"
+          />
         </div>
       )}
 

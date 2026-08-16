@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { AlignedDataset } from '../../core/data/datasetTypes'
-import type { SimulationConfig } from '../../core/simulation/simulationTypes'
+import type {
+  SimulationAssetSelection,
+  SimulationConfig,
+} from '../../core/simulation/simulationTypes'
 import type { ValidationResult } from '../../core/validation'
 import type {
   EngineSelection,
@@ -21,6 +24,7 @@ export type RunSimulationRequest = {
   // asking every caller to manage it.
   readonly loadDataset: () => Promise<ValidationResult<AlignedDataset>>
   readonly config: SimulationConfig
+  readonly selection: SimulationAssetSelection
   // Which engine the Worker should construct (discriminated union). The
   // Worker side derives the model/PRNG version strings itself -- the caller
   // no longer passes them, so they can never disagree with the engine
@@ -82,6 +86,7 @@ export function useSimulationWorker() {
         runId,
         dataset: datasetResult.value,
         config: request.config,
+        selection: request.selection,
         engineSelection: request.engineSelection,
       }
       worker.postMessage(message)
