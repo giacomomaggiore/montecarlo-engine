@@ -78,11 +78,15 @@ export function buildTransferList(result: SimulationResult): ArrayBuffer[] {
   const buffers: ArrayBuffer[] = [result.terminalWealth.buffer]
 
   for (const path of result.representativePaths) {
-    buffers.push(path.values.buffer)
+    buffers.push(path.values.buffer, path.priceLevels.buffer)
   }
 
   for (const path of result.retainedPaths) {
-    buffers.push(path.values.buffer)
+    buffers.push(
+      path.values.buffer,
+      path.contributions.buffer,
+      path.priceLevels.buffer,
+    )
   }
 
   return buffers

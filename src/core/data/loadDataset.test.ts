@@ -69,7 +69,18 @@ function assetsCatalogueFixture(assetIds: readonly string[]) {
     schemaVersion: 'assets-catalogue-v1',
     datasetVersion: 'fixture-weekly-usd-v1',
     baseCurrency: 'USD',
-    assets: assetIds.map((assetId) => ({ assetId, ticker: assetId, name: `${assetId} fixture` })),
+    assets: assetIds.map((assetId) => ({
+      assetId,
+      ticker: assetId,
+      name: `${assetId} fixture`,
+      assetClass: 'equity',
+      history: {
+        firstDate: '2010-01-03',
+        lastDate: '2026-01-04',
+        rowCount: 800,
+        meetsWeeklyMinimum: true,
+      },
+    })),
   }
 }
 

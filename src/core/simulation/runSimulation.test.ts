@@ -86,7 +86,11 @@ describe('runSimulation', () => {
       model: 'historical-bootstrap-v1',
       prng: 'xoshiro128**-v1',
       quantile: 'quantile-linear-interpolation-v1',
+      metrics: 'metrics-v1',
     })
+    // The result must carry the aligned date axis so the UI can map a
+    // bootstrap sourceRowIndex back to a real historical week.
+    expect(result.value.metadata.datasetDates).toEqual([...dataset.dates])
     expect(result.value.metadata.dataset).toBe(dataset.identity)
     expect(result.value.metadata.config).toBe(config)
   })

@@ -115,9 +115,223 @@ pre {
   padding: 1rem;
 }
 
+/* --- Phase 4: input workspace -------------------------------------------- */
+
+/* Desktop-first two-column workspace (portfolio construction left,
+   simulation + portfolio settings right); charts and metrics span full
+   width below, which they do naturally as later siblings. */
+.input-workspace {
+  align-items: start;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr 1fr;
+  margin: 1.5rem 0;
+}
+
+.input-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.input-section,
+.input-subsection {
+  background: #ffffff;
+  border: 1px solid #c7cdc8;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1rem;
+}
+
+.input-subsection {
+  background: #f7f8f6;
+}
+
+.input-section legend {
+  font-weight: 700;
+  padding: 0 0.35rem;
+}
+
+input[type='text'],
+input[type='search'],
+input:not([type]),
+select {
+  border: 1px solid #8a938c;
+  font: inherit;
+  max-width: 14rem;
+  padding: 0.45rem 0.6rem;
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid #d17533;
+  outline-offset: 2px;
+}
+
+/* Invalid state must not rely on color alone: the beside-control message is
+   the primary cue, the border is reinforcement. */
+input[aria-invalid='true'] {
+  border: 2px solid #a23b2e;
+}
+
+.labelled-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.radio-group {
+  border: 1px solid #dde2de;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.75rem;
+}
+
+.radio-group label {
+  align-items: baseline;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.disabled-option {
+  color: #6d766f;
+}
+
+.field-errors {
+  color: #a23b2e;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.validation-summary {
+  color: #a23b2e;
+}
+
+.input-hint {
+  color: #4b544e;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.picker-results {
+  border: 1px solid #dde2de;
+  list-style: none;
+  margin: 0;
+  max-width: 28rem;
+  padding: 0.5rem;
+}
+
+.picker-results li + li {
+  margin-top: 0.35rem;
+}
+
+.picker-results button {
+  background: #ffffff;
+  border: 1px solid #c7cdc8;
+  color: #202124;
+  text-align: left;
+  width: 100%;
+}
+
+.picker-empty {
+  color: #4b544e;
+  font-style: italic;
+}
+
+.holdings-table input {
+  max-width: 6rem;
+}
+
+.allocation-total {
+  font-weight: 700;
+}
+
+/* --- Phase 4: results ------------------------------------------------------ */
+
+.results-panel {
+  margin-top: 2rem;
+}
+
+.completed-run-label {
+  background: #ffffff;
+  border-left: 4px solid #315b50;
+  padding: 0.6rem 0.9rem;
+}
+
+.metrics-table,
+.holdings-table {
+  background: #ffffff;
+  border: 1px solid #c7cdc8;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.metrics-table caption,
+.holdings-table caption {
+  caption-side: top;
+  font-weight: 700;
+  padding: 0.4rem 0;
+  text-align: left;
+}
+
+.metrics-table th,
+.metrics-table td,
+.holdings-table th,
+.holdings-table td {
+  border: 1px solid #dde2de;
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+}
+
+.probability-list dt {
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+
+.probability-list dd {
+  margin: 0.15rem 0 0;
+}
+
+/* A 520-row period table must scroll inside its own region, not stretch the
+   page: the surrounding results stay reachable. */
+.path-detail-scroll {
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+/* Standard screen-reader-only utility: visually removed, still announced. */
+.visually-hidden {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
 @media (max-width: 42rem) {
   .site-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  /* Narrow screens stack the workspace in the spec's order: portfolio
+     construction, then simulation settings, then portfolio settings. */
+  .input-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
   }
 }

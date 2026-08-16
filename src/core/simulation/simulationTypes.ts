@@ -1,4 +1,5 @@
 import type { DatasetIdentity, Frequency } from '../data/datasetTypes'
+import type { SimulationMetrics } from '../portfolio/metrics'
 import type { ValidationError, ValidationResult } from '../validation'
 
 export const MAX_ASSET_COUNT = 6
@@ -45,17 +46,37 @@ export type AlgorithmVersions = {
   readonly model: string
   readonly prng: string
   readonly quantile: string
+  // Which metric definitions (CAGR/IRR/volatility/Sharpe/drawdown formulas)
+  // produced result.metrics -- versioned like every other rule, per the
+  // Financial Rules' "include the algorithm versions in every result".
+  readonly metrics: string
 }
 
 export type SimulationRunMetadata = {
   readonly config: SimulationConfig
   readonly dataset: DatasetIdentity
+  // The aligned dataset's common-history date axis (one ISO date per aligned
+  // row). Carried so the UI can translate a bootstrap scenario's
+  // sourceRowIndex back into the real historical week it was copied from --
+  // sourceRowIndex indexes THIS filtered axis, not the raw released matrix,
+  // so only the runner (which holds the AlignedDataset) can provide it.
+  // ~13 KB for the full weekly release: negligible next to the path buffers.
+  readonly datasetDates: readonly string[]
   readonly algorithms: AlgorithmVersions
 }
 
 export type RetainedPath = {
   readonly pathIndex: number
   readonly values: Float64Array
+  // This path's external contribution per period (index 0 is always 0: the
+  // initial investment is not a scheduled contribution). Value averaging
+  // makes this path-dependent, so it must be recorded, not recomputed.
+  readonly contributions: Float64Array
+  // Cumulative price level per period (period 0 = 1), compounded from this
+  // path's own jointly sampled log-inflation increments. Display-layer only:
+  // real values are nominal values divided by this series, per the Financial
+  // Rules' "simulate nominal, deflate for display".
+  readonly priceLevels: Float64Array
   readonly scenarios: readonly PeriodScenario[]
 }
 
@@ -88,6 +109,10 @@ export type RepresentativePath = {
   readonly pathIndex: number
   readonly terminalWealth: number
   readonly values: Float64Array
+  // Same per-path cumulative price level as RetainedPath.priceLevels, so the
+  // chart's real-value display can deflate each representative trajectory by
+  // ITS OWN sampled inflation path (never by an average of other paths').
+  readonly priceLevels: Float64Array
 }
 
 export type SimulationFailure = {
@@ -100,6 +125,9 @@ export type SimulationFailure = {
 export type SimulationResult = {
   readonly metadata: SimulationRunMetadata
   readonly terminalWealth: Float64Array
+  // Cross-sectional performance metrics (Phase 4.2), computed streaming in
+  // the runner's path loop -- see core/portfolio/metrics.ts for definitions.
+  readonly metrics: SimulationMetrics
   readonly representativePaths: readonly RepresentativePath[]
   readonly retainedPaths: readonly RetainedPath[]
   readonly failures: readonly SimulationFailure[]

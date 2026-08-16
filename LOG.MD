@@ -834,3 +834,53 @@ Reading order matters here: the first three files are self-contained math tools,
 ### Next step
 
 Phase 4: the real input/configuration UI (Portfolio Construction, Simulation and Portfolio Inputs — including the parametric per-holding return overrides, manual $\nu$, and editable inflation/risk-free inputs this phase deliberately hardcoded as demo constants — Execution State, Results, and Validation/Accessibility, per the Frontend Layout and Interaction Specification). Before or at the start of that work: the accumulated real-browser click-through, now covering both engines.
+
+## 2026-08-16 - Phase 4: real input/configuration UI
+
+### Scope completed
+
+Implemented and closed all Phase 4 subphases. The minimal fixed-demo shell is now a real input workspace backed by the released `usd-weekly-v1` catalogue, with input state explicitly separate from the pre-existing Worker execution state. The Worker protocol and accounting semantics remain unchanged: the UI exposes only parameters the two live engines and current unleveraged accounting actually honor.
+
+- Added runtime validation and session caching for untrusted `assets.json`, plus an advisory common-history estimate. The loader's finite-row alignment remains the binding history check because a span preview cannot observe interior data gaps.
+- Added versioned `metrics-v1` and computed every metric inside the existing path loop: terminal-wealth distribution, CAGR or money-weighted IRR, annualized volatility, Sharpe ratio, maximum drawdown, loss probability, and ruin probability. Contributions are excluded from return, volatility, and drawdown calculation through `neutralReturn`, preventing savings behavior from being misreported as investment performance.
+- Replaced hardcoded simulator constants with a headless input reducer and field-addressable validation. The UI now supports holdings and allocations, engine selection, seed, paths, horizon, investment, cash-flow mode, and the parametric model controls (manual/historical return mode, automatic/manual $\nu$, inflation, and risk-free rate).
+- Added results metadata and disclosure: the completed run remains labelled by its own engine, seed, horizon, and dataset while the user edits the next run; representative-path chart data has a nominal/real display toggle; metrics show their cross-sectional distribution with the median as headline; retained paths expose period equity, contributions, price levels, and bootstrap source dates.
+- Added a Playwright browser smoke suite for routes, a real released-data Bootstrap run, result rendering, and cancellation. The suite uses a short one-asset run for transport validation; numerical correctness remains in the core test suite.
+
+### Files added
+
+- **`src/core/portfolio/metrics.ts`** and **`metrics.test.ts`** — pure, versioned per-path metrics, deterministic bisection IRR, and cross-sectional summaries.
+- **`src/core/data/assetCatalogue.ts`** and **`assetCatalogue.test.ts`** — validated assets catalogue, common-history preview, and retryable session cache.
+- **`src/features/simulator/simulatorState.ts`** and **`simulatorState.test.ts`** — reducer plus raw-form-string to validated Worker-run-plan derivation.
+- **`src/features/simulator/PortfolioConstruction.tsx`**, **`SimulationInputs.tsx`**, **`PortfolioSettings.tsx`**, and **`FieldErrors.tsx`** — accessible configuration workspace controls.
+- **`src/features/simulator/ResultsPanel.tsx`** and its test — metrics, completed-run label, chart table alternative, and retained-path inspection.
+- **`src/features/simulator/SimulatorPage.test.tsx`** — page-level search → select → weight → run and validation coverage.
+- **`e2e/simulator.spec.ts`** and **`playwright.config.ts`** — local real-browser smoke tests; `npm run test:e2e` uses the project-local Chromium cache.
+
+### Files changed
+
+- **`src/core/simulation/runSimulation.ts`** — streaming metric accumulation, retained contribution/price-level data, dataset dates, and `metrics-v1` result metadata. Price levels are transiently held in a Float32 path matrix while terminal-based representative paths are selected, then only selected and retained Float64 copies cross the Worker boundary.
+- **`src/core/simulation/simulationTypes.ts`** — result contracts for metrics, algorithm version, data dates, contributions, and price levels.
+- **`src/charts/chartData.ts`**, **`portfolioChart.ts`**, and **`PortfolioChart.tsx`** — nominal/real display transformation stays outside nominal accounting and redraws uPlot with each path's own price level.
+- **`src/core/data/loadDataset.ts`** — delegates catalogue parsing to the new catalogue module while retaining its compatibility re-export.
+- **`src/workers/workerMessages.ts`** — transfers the additional representative/retained path buffers with results.
+- **`src/styles/global.css`** — responsive two-column workspace, tables, validation messages, and narrow-screen stack layout.
+- **`package.json`** and **`package-lock.json`** — add `@playwright/test` and `npm run test:e2e`; **`.prettierignore`** excludes tool-installed `.agents/` assets that are not project code.
+
+### Browser verification
+
+- Manual browser pass against `http://127.0.0.1:4173/`: Bootstrap and Parametric each completed a released-data SPY run, rendered the chart, terminal-path table, and metrics panel. Bootstrap p10/p50/p90 terminal representative paths were $13,722 / $27,311 / $55,682; Parametric produced $13,560 / $27,238 / $57,238 for the same one-asset, seed-42 setup. These are mode-specific outcomes, not a cross-engine equality target.
+- Automated Playwright pass: direct `/`, `/education`, and `/resources` routes; one released-data Bootstrap run through catalogue → loader → Worker → Results; one cancellation of a 19,000-path run. All three passed.
+
+### Validation completed
+
+- Complete Vitest suite: **26 files, 232 tests passed**.
+- Playwright: **3 browser smoke tests passed**.
+- `npm run lint`: passed with no warnings.
+- `npm run format`: passed after `.agents/` was excluded as tool-installed non-project content.
+- `npm run build`: passed (`tsc -b` plus Vite production build).
+- `npm install --save-dev @playwright/test` reported three pre-existing audit findings (two moderate, one high) and an engine warning from a transitive ESLint dependency; neither changed application code or blocked the Phase 4 checks.
+
+### Next step
+
+Phase 5: benchmark comparison. It should be implemented as a separate one-ETF buy-and-hold accumulator receiving the portfolio's actual per-path cash flows, including value-averaging flows, before Phase 6 rebalancing introduces trades.

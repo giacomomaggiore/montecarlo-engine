@@ -8,6 +8,15 @@ import {
   allocateInitialInvestment,
   stepPortfolioPeriod,
 } from '../portfolio/cashFlows'
+import {
+  computeAnnualizedIrr,
+  computeCagr,
+  computeTerminalWealthPercentiles,
+  createPathMetricsAccumulator,
+  METRICS_VERSION,
+  summarizeAcrossPaths,
+} from '../portfolio/metrics'
+import type { SimulationMetrics } from '../portfolio/metrics'
 import type { ValidationResult } from '../validation'
 import type { SimulationEngine } from './simulationEngine'
 import type {
@@ -30,12 +39,13 @@ export type RunSimulationInput = {
   // runSimulation never builds an engine itself, so it works unchanged for any
   // future engine that implements the same SimulationEngine contract.
   readonly engine: SimulationEngine
-  // Only dataset.assetIds.length and dataset.identity are read here. Asset
-  // returns are reached exclusively through the engine's scenarios.
+  // Only dataset.assetIds.length, dataset.identity, and dataset.dates are
+  // read here. Asset returns are reached exclusively through the engine's
+  // scenarios.
   readonly dataset: AlignedDataset
   readonly config: SimulationConfig
   // The caller knows which engine and PRNG produced the scenarios; this file
-  // only knows its own quantile rule.
+  // only knows its own quantile and metrics rules.
   readonly modelVersion: string
   readonly prngVersion: string
   // Optional progress cadence for a Worker host (Phase 2). Defaults to one
@@ -65,20 +75,52 @@ export function runSimulation(
   const { weights, initialInvestment, cashFlow, paths, periods } = config
   const periodCount = periods + 1
   const batchSize = input.batchSize ?? paths
+  const periodsPerYear = dataset.identity.frequency === 'weekly' ? 52 : 12
+  const horizonYears = periods / periodsPerYear
+  // The Key Metrics Panel rule: a time-weighted CAGR is only honest with no
+  // external flows after period 0; once contributions recur, the growth
+  // number must be money-weighted (IRR).
+  const growthKind = cashFlow.mode === 'lumpSum' ? 'cagr' : 'irr'
 
   // One flat typed array instead of nested arrays: paths * periods is already
   // capped at 10,000,000 by validateSimulationConfig, so this stays bounded
   // and avoids the per-number boxing overhead of a plain number[][].
   const equityByPeriod = new Float64Array(periodCount * paths)
+  // Cumulative price level per path per period (period 0 = 1), compounded
+  // from each path's own jointly sampled log-inflation increments. Needed for
+  // the whole matrix because representative paths are only chosen AFTER the
+  // loop, from terminal wealth — their identities are unknowable while
+  // sampling. Float32 (not Float64) deliberately: this series is display-only
+  // deflation, the same "transport precision, not accounting precision"
+  // budget the dataset itself ships in, and it halves the extra memory to
+  // +4 bytes/cell (~40 MB at the absolute work cap, ~4 MB at defaults). The
+  // buffer is discarded when this function returns — only the <= 57 selected
+  // paths' copies survive, so nothing here grows the Worker transfer.
+  const priceLevelByPeriod = new Float32Array(periodCount * paths)
   const terminalWealth = new Float64Array(paths)
+
+  // Per-path metric values (Phase 4.2), NaN = "unavailable for this path".
+  // O(N) space each — the price of reporting metric DISTRIBUTIONS across all
+  // paths rather than one arbitrary path's number.
+  const growthPerPath = new Float64Array(paths)
+  const volatilityPerPath = new Float64Array(paths)
+  const sharpePerPath = new Float64Array(paths)
+  const drawdownPerPath = new Float64Array(paths)
+  // Reusable IRR schedule scratch (investor-perspective net cash flows):
+  // one O(T) buffer reused by every path, never O(N * T) storage.
+  const cashFlowScratch = new Float64Array(periodCount)
+  let lossCount = 0
+
   const failures: SimulationFailure[] = []
   const retainedPaths: RetainedPath[] = []
   const retainedCount = Math.min(RETAINED_PATH_COUNT, paths)
 
-  // Time complexity: O(N * T) — one engine draw and one accounting step per
-  // path per period, matching the N (paths) * T (periods) work budget already
-  // enforced by validateSimulationConfig. Space complexity: O(N * T) for the
-  // flat equityByPeriod buffer below, plus O(T) per retained path.
+  // Time complexity: O(N * T) — one engine draw, one accounting step, and one
+  // O(1) metrics update per path per period, matching the N (paths) * T
+  // (periods) work budget already enforced by validateSimulationConfig; plus
+  // O(T log(1/tol)) per contributing path for the IRR root (see metrics.ts).
+  // Space complexity: O(N * T) for the flat equity and price-level buffers,
+  // plus O(N) for the per-path metric arrays and O(T) per retained path.
   //
   // onBatchComplete is a pure notification hook layered on this single pass —
   // it never restarts the engine's PRNG stream or re-derives a scenario, so a
@@ -88,6 +130,12 @@ export function runSimulation(
   for (let pathIndex = 0; pathIndex < paths; pathIndex += 1) {
     const isRetained = pathIndex < retainedCount
     const retainedValues = isRetained ? new Float64Array(periodCount) : null
+    const retainedContributions = isRetained
+      ? new Float64Array(periodCount)
+      : null
+    const retainedPriceLevels = isRetained
+      ? new Float64Array(periodCount)
+      : null
     const retainedScenarios: PeriodScenario[] | null = isRetained ? [] : null
 
     let holdings: readonly number[] = allocateInitialInvestment(
@@ -96,7 +144,20 @@ export function runSimulation(
     )
     let equity = sum(holdings)
     equityByPeriod[pathIndex] = equity
+    priceLevelByPeriod[pathIndex] = 1
     retainedValues?.set([equity], 0)
+    retainedPriceLevels?.set([1], 0)
+    // retainedContributions[0] stays 0: the initial investment is capital
+    // allocation, not a scheduled contribution.
+
+    // Metrics accumulate streaming, from the very numbers the accounting
+    // step just produced — never recovered later from the equity buffer.
+    const metricsAccumulator = createPathMetricsAccumulator(periodsPerYear)
+    // Price level compounds in log space (the CPI column and the parametric
+    // engine both emit LOG inflation increments): P_t = exp(sum of
+    // increments), so P is exact under addition and can never go negative.
+    let cumulativeLogInflation = 0
+    cashFlowScratch.fill(0)
 
     let failedAtPeriod = -1
 
@@ -125,7 +186,26 @@ export function runSimulation(
       holdings = result.holdings
       equity = result.equity
       equityByPeriod[periodIndex * paths + pathIndex] = equity
+
+      cumulativeLogInflation += scenario.inflation
+      const priceLevel = Math.exp(cumulativeLogInflation)
+      priceLevelByPeriod[periodIndex * paths + pathIndex] = priceLevel
+
+      metricsAccumulator.recordPeriod(
+        result.contribution,
+        result.neutralReturn,
+        scenario.riskFreeRate,
+      )
+      // Investor-perspective flow: a contribution is money leaving the
+      // investor's pocket, hence negative in the IRR schedule.
+      cashFlowScratch[periodIndex] = -result.contribution
+
       retainedValues?.set([equity], periodIndex)
+      retainedContributions?.set([result.contribution], periodIndex)
+      // Retained paths get the full-precision float64 price level for free
+      // (we are inside the loop); representative paths, chosen only after
+      // the loop, are copied from the float32 buffer instead.
+      retainedPriceLevels?.set([priceLevel], periodIndex)
       retainedScenarios?.push(scenario)
     }
 
@@ -134,24 +214,76 @@ export function runSimulation(
     if (failed) {
       // Every never-written period from the failure onward defaults to 0 in the
       // typed array. Overwrite with NaN so downstream consumers (terminal
-      // wealth, representative-path selection) can tell "this path failed
-      // here" from "this path was legitimately worth $0 here".
+      // wealth, representative-path selection, real-value deflation) can tell
+      // "this path failed here" from "this path was legitimately worth $0 here".
       for (
         let periodIndex = failedAtPeriod;
         periodIndex <= periods;
         periodIndex += 1
       ) {
         equityByPeriod[periodIndex * paths + pathIndex] = NaN
+        priceLevelByPeriod[periodIndex * paths + pathIndex] = NaN
         retainedValues?.set([NaN], periodIndex)
+        retainedContributions?.set([NaN], periodIndex)
+        retainedPriceLevels?.set([NaN], periodIndex)
       }
     }
 
     terminalWealth[pathIndex] = failed ? NaN : equity
 
-    if (isRetained && retainedValues && retainedScenarios) {
+    // Per-path metric values. A failed path has NO defined metrics (NaN
+    // everywhere) but DOES count as a loss: it certainly did not beat its
+    // own contributed capital.
+    if (failed) {
+      growthPerPath[pathIndex] = NaN
+      volatilityPerPath[pathIndex] = NaN
+      sharpePerPath[pathIndex] = NaN
+      drawdownPerPath[pathIndex] = NaN
+      lossCount += 1
+    } else {
+      const pathMetrics = metricsAccumulator.finish()
+      volatilityPerPath[pathIndex] = pathMetrics.annualizedVolatility
+      sharpePerPath[pathIndex] = pathMetrics.sharpeRatio
+      drawdownPerPath[pathIndex] = pathMetrics.maxDrawdown
+
+      if (growthKind === 'cagr') {
+        growthPerPath[pathIndex] = computeCagr(
+          initialInvestment,
+          equity,
+          horizonYears,
+        )
+      } else {
+        // Complete the schedule: initial outflow at t = 0, terminal value in
+        // at t = T (net of the contribution that also happened at T).
+        cashFlowScratch[0] = -initialInvestment
+        cashFlowScratch[periods] += equity
+        growthPerPath[pathIndex] = computeAnnualizedIrr(
+          cashFlowScratch,
+          periodsPerYear,
+        )
+      }
+
+      // Loss = the portfolio ended below everything the investor put in
+      // (initial investment plus this path's own realized contributions —
+      // value averaging makes that total path-dependent).
+      const totalPaidIn = initialInvestment + pathMetrics.totalContributions
+      if (equity < totalPaidIn) {
+        lossCount += 1
+      }
+    }
+
+    if (
+      isRetained &&
+      retainedValues &&
+      retainedContributions &&
+      retainedPriceLevels &&
+      retainedScenarios
+    ) {
       retainedPaths.push({
         pathIndex,
         values: retainedValues,
+        contributions: retainedContributions,
+        priceLevels: retainedPriceLevels,
         scenarios: retainedScenarios,
       })
     }
@@ -164,22 +296,44 @@ export function runSimulation(
     }
   }
 
+  const metrics: SimulationMetrics = {
+    terminalWealth: computeTerminalWealthPercentiles(terminalWealth),
+    lossProbability: lossCount / paths,
+    // Ruin = the fraction of failed/insolvent paths. Structurally ~0 until
+    // leverage exists (Phase 5+): unleveraged long-only accounting cannot go
+    // insolvent. Reported anyway so the definition is already in place.
+    ruinProbability: failures.length / paths,
+    growth: {
+      kind: growthKind,
+      summary: summarizeAcrossPaths(growthPerPath),
+    },
+    annualizedVolatility: summarizeAcrossPaths(volatilityPerPath),
+    sharpeRatio: summarizeAcrossPaths(sharpePerPath),
+    maxDrawdown: summarizeAcrossPaths(drawdownPerPath),
+  }
+
   return {
     ok: true,
     value: {
       metadata: {
         config,
         dataset: dataset.identity,
+        // A copy, not the dataset's own array reference: the result must stay
+        // self-contained once the dataset is released.
+        datasetDates: [...dataset.dates],
         algorithms: {
           model: input.modelVersion,
           prng: input.prngVersion,
           quantile: QUANTILE_VERSION,
+          metrics: METRICS_VERSION,
         },
       },
       terminalWealth,
+      metrics,
       representativePaths: selectRepresentativePaths(
         terminalWealth,
         equityByPeriod,
+        priceLevelByPeriod,
         paths,
         periodCount,
       ),
@@ -218,6 +372,7 @@ export function runSimulation(
 function selectRepresentativePaths(
   terminalWealth: Float64Array,
   equityByPeriod: Float64Array,
+  priceLevelByPeriod: Float32Array,
   paths: number,
   periodCount: number,
 ): RepresentativePath[] {
@@ -247,8 +402,13 @@ function selectRepresentativePaths(
     )
 
     const values = new Float64Array(periodCount)
+    const priceLevels = new Float64Array(periodCount)
     for (let periodIndex = 0; periodIndex < periodCount; periodIndex += 1) {
       values[periodIndex] = equityByPeriod[periodIndex * paths + pathIndex]
+      // Copied out of the float32 buffer: display-precision by design (see
+      // the buffer's allocation comment).
+      priceLevels[periodIndex] =
+        priceLevelByPeriod[periodIndex * paths + pathIndex]
     }
 
     return {
@@ -256,6 +416,7 @@ function selectRepresentativePaths(
       pathIndex,
       terminalWealth: terminalWealth[pathIndex],
       values,
+      priceLevels,
     }
   })
 }

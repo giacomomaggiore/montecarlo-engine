@@ -4,3 +4,5 @@ README.md
 data/
 dist/
 node_modules/
+.agents/
+test-results/

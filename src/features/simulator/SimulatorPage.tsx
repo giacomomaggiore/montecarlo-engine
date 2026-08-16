@@ -1,99 +1,162 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { fetchAssetsCatalogueCached } from '../../core/data/assetCatalogue'
+import type { AssetsCatalogue } from '../../core/data/assetCatalogue'
 import { loadAlignedDataset } from '../../core/data/loadDataset'
-import type { ParametricStudentTOptions } from '../../core/simulation/parametricStudentT'
-import type { SimulationConfig } from '../../core/simulation/simulationTypes'
-import type { EngineSelection } from '../../workers/workerMessages'
-import { PortfolioChart } from './PortfolioChart'
+import type { ValidationResult } from '../../core/validation'
+import { PortfolioConstruction } from './PortfolioConstruction'
+import { PortfolioSettings } from './PortfolioSettings'
+import { ResultsPanel } from './ResultsPanel'
+import { SimulationInputs } from './SimulationInputs'
+import {
+  DEFAULT_SIMULATOR_INPUTS,
+  deriveRunPlan,
+  reduceSimulatorInputs,
+} from './simulatorState'
+import type { SimulatorInputsAction } from './simulatorState'
 import { useSimulationWorker } from './useSimulationWorker'
 
-// Fixed demo selection until Phase 4 adds a real, searchable ETF picker:
-// two real tickers already present in the released usd-weekly-v1 matrix
-// (public/data/manifest.json's assetColumns), a 60/40 equity/bond split.
-const DEMO_ASSET_IDS = ['SPY', 'AGG'] as const
-const DEMO_WEIGHTS = [0.6, 0.4] as const
+// Phase 4 — the real Engine page. Composition only: input-configuration
+// state lives in the simulatorState reducer, execution state in
+// useSimulationWorker, catalogue data in the session cache. This component
+// wires them together and owns nothing else.
 
-// Demo configuration only: README defaults are weekly frequency, 2,000
-// paths, and a 10-year (520-week) horizon. Phase 4 replaces this fixed
-// object with real user-editable Portfolio Construction and Simulation
-// Inputs.
-const DEMO_CONFIG: SimulationConfig = {
-  weights: [...DEMO_WEIGHTS],
-  initialInvestment: 10_000,
-  cashFlow: { mode: 'dca', amount: 100 },
-  paths: 2000,
-  periods: 520,
-  seed: 42,
-}
-
-// Fixed demo parametric options until Phase 4 adds the real inputs the
-// frontend spec defines (per-holding annual geometric return, manual nu,
-// editable inflation/risk-free): historical means, automatic degrees of
-// freedom, 2% annual inflation, 3% annual risk-free rate.
-const DEMO_PARAMETRIC_OPTIONS: ParametricStudentTOptions = {
-  annualInflation: 0.02,
-  annualRiskFreeRate: 0.03,
-}
-
-type SelectableEngine = 'bootstrap' | 'studentT'
-
-const ENGINE_LABELS: Record<SelectableEngine, string> = {
-  bootstrap: 'Bootstrap',
-  studentT: 'Parametric',
-}
+// Only released base currency today; EUR arrives with its own artifact gate
+// (Phase 10 of the Work-in-Progress Plan).
+const BASE_CURRENCY = 'USD' as const
 
 export function SimulatorPage() {
+  const [inputs, dispatchInputs] = useReducer(
+    reduceSimulatorInputs,
+    DEFAULT_SIMULATOR_INPUTS,
+  )
   const { state, run, cancel } = useSimulationWorker()
-  // Input-configuration state, kept strictly separate from the hook's
-  // execution/run state per the Maintenance Policy.
-  const [selectedEngine, setSelectedEngine] =
-    useState<SelectableEngine>('bootstrap')
+
+  // The catalogue backs the picker and the history preview. null = still
+  // loading. A failed load leaves the page usable enough to READ, but Run
+  // stays disabled — no catalogue means no validated selection.
+  const [catalogue, setCatalogue] =
+    useState<ValidationResult<AssetsCatalogue> | null>(null)
+  useEffect(() => {
+    let active = true
+    fetchAssetsCatalogueCached().then((result) => {
+      // A route change can unmount this page mid-fetch; setting state on an
+      // unmounted component is a React warning and a logic smell.
+      if (active) {
+        setCatalogue(result)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Memoized so a stable empty array (not a fresh literal each render) feeds
+  // the plan derivation below while the catalogue is still loading.
+  const catalogueAssets = useMemo(
+    () => (catalogue !== null && catalogue.ok ? catalogue.value.assets : []),
+    [catalogue],
+  )
+
+  // Re-derived on every input edit: parsing a dozen short strings is far
+  // cheaper than a render, and it is what keeps Run's disabled state and
+  // every beside-control error continuously honest.
+  const plan = useMemo(
+    () => deriveRunPlan(inputs, catalogueAssets),
+    [inputs, catalogueAssets],
+  )
+  const inputErrors = plan.ok ? null : plan.errors
 
   const isBusy = state.status === 'loading-data' || state.status === 'running'
 
-  function handleRun() {
-    const engineSelection: EngineSelection =
-      selectedEngine === 'bootstrap'
-        ? { engine: 'bootstrap' }
-        : { engine: 'studentT', options: DEMO_PARAMETRIC_OPTIONS }
+  // The spec's "input changes during a run terminate and replace the worker":
+  // any edit while busy cancels the in-flight run first. The stale-run-id
+  // guards in the hook make the ordering safe even if a Worker message is
+  // already in the event queue.
+  const dispatch = useCallback(
+    (action: SimulatorInputsAction) => {
+      if (isBusy) {
+        cancel()
+      }
+      dispatchInputs(action)
+    },
+    [isBusy, cancel],
+  )
 
+  function handleRun() {
+    if (!plan.ok) {
+      return
+    }
+    const { assetIds, config, engineSelection } = plan.value
     run({
-      loadDataset: () => loadAlignedDataset(DEMO_ASSET_IDS, 'weekly', 'USD'),
-      config: DEMO_CONFIG,
+      // The thunk defers the (possibly network-bound) dataset load to the
+      // hook, which owns the loading-data state and its failure path.
+      loadDataset: () =>
+        loadAlignedDataset(assetIds, inputs.frequency, BASE_CURRENCY),
+      config,
       engineSelection,
     })
   }
 
+  const runDisabled = isBusy || !plan.ok || catalogue === null || !catalogue.ok
+
   return (
     <section aria-labelledby="engine-heading" className="page-content">
       <h1 id="engine-heading">Engine</h1>
-      <p className="phase-note">
-        Demo portfolio: 60% SPY / 40% AGG, weekly rebalancing-free DCA, against
-        the real released historical dataset (usd-weekly-v1). Bootstrap
-        resamples joint historical weeks; Parametric samples a Student&apos;s t
-        fitted to the same data (2% inflation, 3% risk-free demo constants).
-        Phase 4 replaces this fixed selection with a real, searchable portfolio
-        builder.
-      </p>
 
-      <fieldset className="engine-selector" disabled={isBusy}>
-        <legend>Simulation engine</legend>
-        {(Object.keys(ENGINE_LABELS) as SelectableEngine[]).map((engine) => (
-          <button
-            aria-pressed={selectedEngine === engine}
-            key={engine}
-            onClick={() => setSelectedEngine(engine)}
-            type="button"
-          >
-            {ENGINE_LABELS[engine]}
-          </button>
-        ))}
-        <button disabled title="Planned future engine" type="button">
-          Markov Chain (future)
-        </button>
-      </fieldset>
+      {catalogue === null && <p role="status">Loading asset catalogue…</p>}
+      {catalogue !== null && !catalogue.ok && (
+        <div role="alert">
+          <p>The asset catalogue could not be loaded:</p>
+          <ul>
+            {catalogue.errors.map((error) => (
+              <li key={error.code}>{error.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {catalogue !== null && catalogue.ok && (
+        <div className="input-workspace">
+          <PortfolioConstruction
+            assets={catalogueAssets}
+            dispatch={dispatch}
+            errors={inputErrors}
+            holdings={inputs.holdings}
+          />
+          <div className="input-column">
+            <SimulationInputs
+              assets={catalogueAssets}
+              dispatch={dispatch}
+              errors={inputErrors}
+              inputs={inputs}
+            />
+            <PortfolioSettings
+              dispatch={dispatch}
+              errors={inputErrors}
+              inputs={inputs}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* The aria-live validation summary the spec requires, complementing
+          the beside-control messages. polite: it re-announces as the user
+          types, and must not interrupt their own input echo. */}
+      <div aria-live="polite" className="validation-summary">
+        {inputErrors !== null && inputErrors.length > 0 && (
+          <>
+            <p>Fix the following before running:</p>
+            <ul>
+              {inputErrors.map((error) => (
+                <li key={error.code + error.message}>{error.message}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
 
       <div className="engine-controls">
-        <button disabled={isBusy} onClick={handleRun} type="button">
+        <button disabled={runDisabled} onClick={handleRun} type="button">
           Run
         </button>
         <button disabled={!isBusy} onClick={cancel} type="button">
@@ -123,7 +186,9 @@ export function SimulatorPage() {
         )}
       </div>
 
-      {state.status === 'completed' && <PortfolioChart result={state.result} />}
+      {state.status === 'completed' && (
+        <ResultsPanel displayMode={inputs.displayMode} result={state.result} />
+      )}
     </section>
   )
 }

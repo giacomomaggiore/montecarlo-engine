@@ -1,6 +1,7 @@
 import uPlot from 'uplot'
 import type { SimulationResult } from '../core/simulation/simulationTypes'
 import { toChartData } from './chartData'
+import type { DisplayMode } from './chartData'
 
 // One stroke style per quantile level, ordered p10..p90. p50 is the most
 // visually prominent; p10/p90 are the thinnest and most muted. Deliberately
@@ -38,8 +39,11 @@ function labelForLevel(level: number): string {
 export function createPortfolioChart(
   container: HTMLElement,
   result: SimulationResult,
+  // Nominal by default; 'real' deflates every drawn path by its own sampled
+  // inflation trajectory (see chartData.ts) -- purely presentational.
+  displayMode: DisplayMode = 'nominal',
 ): uPlot {
-  const chartData = toChartData(result)
+  const chartData = toChartData(result, displayMode)
 
   const data: uPlot.AlignedData = [
     chartData.periods,

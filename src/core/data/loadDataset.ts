@@ -1,6 +1,14 @@
 import type { ValidationError, ValidationResult } from '../validation'
+import { parseAssetsCatalogue } from './assetCatalogue'
+import type { AssetsCatalogue } from './assetCatalogue'
 import type { AlignedDataset, BaseCurrency, Frequency } from './datasetTypes'
 import { validateAlignedDataset } from './datasetTypes'
+
+// Catalogue parsing moved to assetCatalogue.ts in Phase 4.3 (the picker
+// needs the catalogue long before any run); re-exported here so existing
+// imports keep working.
+export { parseAssetsCatalogue } from './assetCatalogue'
+export type { AssetCatalogueRecord, AssetsCatalogue } from './assetCatalogue'
 
 // The browser-side counterpart to pipeline/build_release.py and
 // pipeline/validate_release.py: fetches the three released artifacts
@@ -36,19 +44,6 @@ export type DatasetManifest = {
   }
   readonly byteOffsets: Readonly<Record<string, number>>
   readonly byteLength: number
-}
-
-export type AssetCatalogueRecord = {
-  readonly assetId: string
-  readonly ticker: string
-  readonly name: string
-}
-
-export type AssetsCatalogue = {
-  readonly schemaVersion: string
-  readonly datasetVersion: string
-  readonly baseCurrency: BaseCurrency
-  readonly assets: readonly AssetCatalogueRecord[]
 }
 
 export type DatasetArtifacts = {
@@ -238,59 +233,6 @@ export function parseManifest(raw: unknown): ValidationResult<DatasetManifest> {
   }
 }
 
-export function parseAssetsCatalogue(raw: unknown): ValidationResult<AssetsCatalogue> {
-  const errors: ValidationError[] = []
-
-  if (typeof raw !== 'object' || raw === null) {
-    return { ok: false, errors: [error('assetsCatalogue.shape', 'assets.json must be a JSON object.')] }
-  }
-
-  const catalogue = raw as Record<string, unknown>
-
-  requireNonEmptyString(catalogue, 'schemaVersion', 'assetsCatalogue', errors)
-  requireNonEmptyString(catalogue, 'datasetVersion', 'assetsCatalogue', errors)
-
-  const baseCurrency = catalogue['baseCurrency']
-  if (baseCurrency !== 'USD' && baseCurrency !== 'EUR') {
-    errors.push(error('assetsCatalogue.baseCurrency', 'assetsCatalogue.baseCurrency must be "USD" or "EUR".'))
-  }
-
-  const assets = catalogue['assets']
-  if (!Array.isArray(assets)) {
-    errors.push(error('assetsCatalogue.assets', 'assetsCatalogue.assets must be an array.'))
-    return { ok: false, errors }
-  }
-
-  const records: AssetCatalogueRecord[] = []
-  assets.forEach((entry, index) => {
-    const record = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : undefined
-    const assetId = record?.['assetId']
-    const ticker = record?.['ticker']
-    const name = record?.['name']
-
-    if (typeof assetId !== 'string' || typeof ticker !== 'string' || typeof name !== 'string') {
-      errors.push(error('assetsCatalogue.record', `assets[${index}] is missing a string assetId, ticker, or name.`))
-      return
-    }
-
-    records.push({ assetId, ticker, name })
-  })
-
-  if (errors.length > 0) {
-    return { ok: false, errors }
-  }
-
-  return {
-    ok: true,
-    value: {
-      schemaVersion: catalogue['schemaVersion'] as string,
-      datasetVersion: catalogue['datasetVersion'] as string,
-      baseCurrency: baseCurrency as BaseCurrency,
-      assets: records,
-    },
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Matrix integrity -- checksum and byte length, before any value is read
 // ---------------------------------------------------------------------------
@@ -406,6 +348,22 @@ export async function fetchDatasetArtifacts(
 
     const assetsResult = parseAssetsCatalogue(assetsJson)
     if (!assetsResult.ok) return assetsResult
+
+    // The catalogue and the manifest must describe the same release: a
+    // deployment that updates one file but not the other would otherwise let
+    // the picker offer assets the matrix does not actually contain.
+    if (assetsResult.value.datasetVersion !== manifest.datasetVersion) {
+      return {
+        ok: false,
+        errors: [
+          error(
+            'dataset.catalogue.versionMismatch',
+            `assets.json describes ${assetsResult.value.datasetVersion}, ` +
+              `but manifest.json describes ${manifest.datasetVersion}.`,
+          ),
+        ],
+      }
+    }
 
     const integrityResult = await verifyMatrixIntegrity(matrixBuffer, manifest)
     if (!integrityResult.ok) return integrityResult

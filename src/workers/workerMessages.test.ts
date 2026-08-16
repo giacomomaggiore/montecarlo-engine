@@ -11,6 +11,8 @@ function createResult(retainedPathCount: number): SimulationResult {
   const retainedPaths = Array.from({ length: retainedPathCount }, (_, i) => ({
     pathIndex: i,
     values: new Float64Array([1, 2, 3]),
+    contributions: new Float64Array([0, 1, 1]),
+    priceLevels: new Float64Array([1, 1.001, 1.002]),
     scenarios: [],
   }))
   const representativePaths = REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
@@ -19,6 +21,7 @@ function createResult(retainedPathCount: number): SimulationResult {
       pathIndex: i,
       terminalWealth: 1000 + i,
       values: new Float64Array([1000, 1000 + i]),
+      priceLevels: new Float64Array([1, 1.001]),
     }),
   )
 
@@ -38,9 +41,24 @@ function createResult(retainedPathCount: number): SimulationResult {
         frequency: 'weekly',
         baseCurrency: 'USD',
       },
-      algorithms: { model: 'test', prng: 'test', quantile: 'test' },
+      datasetDates: ['2020-01-05', '2020-01-12'],
+      algorithms: {
+        model: 'test',
+        prng: 'test',
+        quantile: 'test',
+        metrics: 'test',
+      },
     },
     terminalWealth: new Float64Array([1000]),
+    metrics: {
+      terminalWealth: null,
+      lossProbability: 0,
+      ruinProbability: 0,
+      growth: { kind: 'cagr', summary: null },
+      annualizedVolatility: null,
+      sharpeRatio: null,
+      maxDrawdown: null,
+    },
     representativePaths,
     retainedPaths,
     failures: [],
@@ -82,16 +100,22 @@ describe('buildTransferList', () => {
     const result = createResult(2)
     const transferList = buildTransferList(result)
 
-    expect(transferList).toHaveLength(1 + 7 + 2)
+    // 1 terminal-wealth buffer, 2 per representative path (values +
+    // priceLevels), 3 per retained path (values + contributions +
+    // priceLevels).
+    expect(transferList).toHaveLength(1 + 7 * 2 + 2 * 3)
     expect(transferList).toContain(result.terminalWealth.buffer)
     expect(transferList).toContain(result.representativePaths[0].values.buffer)
-    expect(transferList).toContain(result.representativePaths[6].values.buffer)
+    expect(transferList).toContain(
+      result.representativePaths[6].priceLevels.buffer,
+    )
     expect(transferList).toContain(result.retainedPaths[0].values.buffer)
-    expect(transferList).toContain(result.retainedPaths[1].values.buffer)
+    expect(transferList).toContain(result.retainedPaths[1].contributions.buffer)
+    expect(transferList).toContain(result.retainedPaths[1].priceLevels.buffer)
   })
 
   it('scales with zero retained paths', () => {
     const result = createResult(0)
-    expect(buildTransferList(result)).toHaveLength(1 + 7)
+    expect(buildTransferList(result)).toHaveLength(1 + 7 * 2)
   })
 })
