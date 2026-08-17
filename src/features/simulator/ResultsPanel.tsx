@@ -6,6 +6,7 @@ import type {
   RetainedPath,
   SimulationResult,
 } from '../../core/simulation/simulationTypes'
+import { ExportDownloads } from './ExportDownloads'
 import { PortfolioChart } from './PortfolioChart'
 import { LeverageChart } from './LeverageChart'
 
@@ -582,6 +583,7 @@ export function ResultsPanel({
 
       <MetricsTable result={result} />
       <PathInspector displayMode={displayMode} result={result} />
+      <ExportDownloads result={result} />
     </section>
   )
 }

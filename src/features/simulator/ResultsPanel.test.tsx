@@ -234,4 +234,37 @@ describe('ResultsPanel', () => {
     expect(within(table).getByText('Executed orders')).toBeInTheDocument()
     expect(within(table).getByText('Loss carryforward')).toBeInTheDocument()
   })
+
+  it('downloads terminal outcomes from the immutable completed result', async () => {
+    const user = userEvent.setup()
+    const blobParts: unknown[] = []
+    const createObjectURL = vi.fn(() => 'blob:terminal-outcomes')
+    const revokeObjectURL = vi.fn()
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+
+    class BlobStub {
+      constructor(parts: readonly unknown[]) {
+        blobParts.push(...parts)
+      }
+    }
+
+    vi.stubGlobal('Blob', BlobStub)
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    try {
+      renderPanel()
+      await user.click(
+        screen.getByRole('button', { name: 'Download Terminal outcomes CSV' }),
+      )
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      expect(blobParts.join('')).toContain('path_index')
+      expect(blobParts.join('')).toContain('0,"completed",1210')
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:terminal-outcomes')
+    } finally {
+      click.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
 })

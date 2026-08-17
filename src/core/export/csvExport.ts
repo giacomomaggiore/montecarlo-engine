@@ -1,10 +1,7 @@
 import type { MetricSummary, SimulationMetrics } from '../portfolio/metrics'
-import type {
-  ExecutedPortfolioTrade,
-} from '../portfolio/transactionCosts'
+import type { ExecutedPortfolioTrade } from '../portfolio/transactionCosts'
 import type { PortfolioTrade } from '../portfolio/rebalancing'
 import type {
-  RetainedPath,
   SimulationFailure,
   SimulationResult,
 } from '../simulation/simulationTypes'
@@ -45,7 +42,8 @@ export function createCsvExports(
 
 export function escapeCsvCell(value: CsvCell): string {
   if (value === null || value === undefined) return ''
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? String(value) : ''
   if (typeof value === 'boolean') return value ? 'true' : 'false'
 
   const formulaSafeValue = /^[=+\-@]/.test(value) ? `'${value}` : value
@@ -160,10 +158,18 @@ function createMetricSummariesCsv(metrics: SimulationMetrics): string {
   addMetricSummary(rows, 'realized_gain_loss', metrics.realizedGainLoss)
   addMetricSummary(rows, 'taxes_paid', metrics.taxesPaid)
   addMetricSummary(rows, 'loss_carryforward', metrics.lossCarryforward)
-  addMetricSummary(rows, 'borrowing_interest', metrics.borrowingInterest ?? null)
+  addMetricSummary(
+    rows,
+    'borrowing_interest',
+    metrics.borrowingInterest ?? null,
+  )
   addScalarMetric(rows, 'loss_probability', metrics.lossProbability)
   addScalarMetric(rows, 'ruin_probability', metrics.ruinProbability)
-  addScalarMetric(rows, 'margin_call_probability', metrics.marginCallProbability)
+  addScalarMetric(
+    rows,
+    'margin_call_probability',
+    metrics.marginCallProbability,
+  )
   if (metrics.benchmark !== null) {
     addMetricSummary(
       rows,
@@ -204,13 +210,18 @@ function createTerminalOutcomesCsv(result: SimulationResult): string {
   }
 
   const rows: CsvCell[][] = []
-  for (let pathIndex = 0; pathIndex < result.terminalWealth.length; pathIndex += 1) {
+  for (
+    let pathIndex = 0;
+    pathIndex < result.terminalWealth.length;
+    pathIndex += 1
+  ) {
     const failure = failuresByPath.get(pathIndex)
     const terminalWealth = result.terminalWealth[pathIndex]
-      const benchmarkTerminalWealth =
-        result.benchmarkTerminalWealth?.[pathIndex] ?? NaN
+    const benchmarkTerminalWealth =
+      result.benchmarkTerminalWealth?.[pathIndex] ?? NaN
     const comparable =
-      Number.isFinite(terminalWealth) && Number.isFinite(benchmarkTerminalWealth)
+      Number.isFinite(terminalWealth) &&
+      Number.isFinite(benchmarkTerminalWealth)
     rows.push([
       pathIndex,
       failure === undefined
@@ -247,18 +258,29 @@ function createTerminalOutcomesCsv(result: SimulationResult): string {
 function createRetainedPathDetailsCsv(result: SimulationResult): string {
   const rows: CsvCell[][] = []
   for (const path of result.retainedPaths) {
-    for (let periodIndex = 0; periodIndex < path.values.length; periodIndex += 1) {
+    for (
+      let periodIndex = 0;
+      periodIndex < path.values.length;
+      periodIndex += 1
+    ) {
       const scenario = periodIndex > 0 ? path.scenarios[periodIndex - 1] : null
       const sourceRowIndex = scenario?.sourceRowIndex ?? null
       rows.push([
         path.pathIndex,
         periodIndex,
-        scenario === null ? null : sourceRowIndex === null ? null : result.metadata.datasetDates[sourceRowIndex],
+        scenario === null
+          ? null
+          : sourceRowIndex === null
+            ? null
+            : result.metadata.datasetDates[sourceRowIndex],
         path.values[periodIndex],
         path.contributions[periodIndex],
         path.priceLevels[periodIndex],
         sourceRowIndex,
-        serializeTrades(path.trades[periodIndex] ?? [], result.metadata.portfolioAssetIds),
+        serializeTrades(
+          path.trades[periodIndex] ?? [],
+          result.metadata.portfolioAssetIds,
+        ),
         serializeExecutedTrades(
           path.executedTrades[periodIndex] ?? [],
           result.metadata.portfolioAssetIds,
@@ -308,7 +330,16 @@ function createRetainedPathDetailsCsv(result: SimulationResult): string {
 function addMetricSummary(
   rows: CsvCell[][],
   metric: string,
-  summary: MetricSummary | { readonly p10: number; readonly p25: number; readonly p50: number; readonly p75: number; readonly p90: number } | null,
+  summary:
+    | MetricSummary
+    | {
+        readonly p10: number
+        readonly p25: number
+        readonly p50: number
+        readonly p75: number
+        readonly p90: number
+      }
+    | null,
 ): void {
   if (summary === null || summary === undefined) {
     rows.push([metric])
@@ -348,7 +379,18 @@ function addScalarMetric(
   value: number | null | undefined,
   availablePathCount: number | null = null,
 ): void {
-  rows.push([metric, null, null, null, null, null, null, null, value, availablePathCount])
+  rows.push([
+    metric,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    value,
+    availablePathCount,
+  ])
 }
 
 function serializeTrades(

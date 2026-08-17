@@ -83,7 +83,13 @@ function fixtureResult(): SimulationResult {
         values: new Float64Array([1000, 1200]),
         contributions: new Float64Array([0, 100]),
         priceLevels: new Float64Array([1, 1.01]),
-        trades: [[], [{ assetIndex: 0, value: -30 }, { assetIndex: 1, value: 30 }]],
+        trades: [
+          [],
+          [
+            { assetIndex: 0, value: -30 },
+            { assetIndex: 1, value: 30 },
+          ],
+        ],
         executedTrades: [
           [],
           [
@@ -149,7 +155,7 @@ describe('csvExport', () => {
     expect(exports[1].content).toContain('benchmark_outperformance_probability')
     expect(exports[2].content).toContain('0,"completed",1200,1100,100,true')
     expect(exports[2].content).toContain(
-      '1,"insolvent",0,,,,1,"insolvent","\'=margin loss, ""final"""',
+      '1,"insolvent",0,,,false,1,"insolvent","\'=margin loss, ""final"""',
     )
     expect(exports[3].content).toContain('0,0,,1000,0,1,,"[]","[]"')
     expect(exports[3].content).toContain('2020-01-12')

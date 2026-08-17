@@ -40,11 +40,12 @@ test('runs Bootstrap against the released browser artifacts and renders results'
   await expect(
     page.getByText(/Completed run: historical-bootstrap-v1/),
   ).toBeVisible()
-  await expect(
-    page.getByRole('table', {
-      name: /Terminal wealth after final liquidation/,
-    }),
-  ).toBeVisible()
+  const downloadPromise = page.waitForEvent('download')
+  await page
+    .getByRole('button', { name: 'Download Terminal outcomes CSV' })
+    .click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/terminal-outcomes\.csv$/)
 })
 
 test('runs DCA with transaction costs and capital-gains tax', async ({

@@ -1029,3 +1029,47 @@ The next reproduction should retain the now-visible completed-run leverage field
 - The metric-summary interpolation test now independently checks p01 = 1.02 and p99 = 2.98 for the finite sample `[1, 2, 3]`, under the app's canonical linear rule.
 - `npx tsc --noEmit -p tsconfig.app.json`: passed.
 - Complete Vitest suite: **32 files, 268 tests passed**.
+
+## 2026-08-17 - Phase 9: completed-run CSV export
+
+### Scope completed
+
+- Added four deterministic CSV exports from the immutable completed `SimulationResult`: run metadata/settings, metric summaries, all-path terminal outcomes, and bounded retained-path detail.
+- Added completed-result-only download controls. They create UTF-8 CSV `Blob`s, download through temporary object URLs, then revoke those URLs. Export does not construct a Worker, refetch data, rerun a simulation, persist data, or read the currently edited input form.
+- Added `portfolioAssetIds` to completed metadata. This maps retained trade `assetIndex` values to stable asset IDs without relying on the next-run portfolio selection.
+- Added pure serializer tests, a ResultsPanel Blob-download interaction test, and a Playwright download smoke assertion.
+
+### Files added
+
+- `src/core/export/csvExport.ts` / `.test.ts`: versioned `csv-export-v1` serializer, CSV cell encoder, deterministic filenames, and focused contract tests.
+- `src/features/simulator/ExportDownloads.tsx`: four completed-result download controls.
+- `src/features/simulator/csvDownload.ts`: small browser-only `Blob`/object-URL download helper.
+
+### Files changed
+
+- `src/core/simulation/simulationTypes.ts` and `runSimulation.ts`: completed-run metadata now preserves portfolio asset IDs in portfolio-order.
+- `src/features/simulator/ResultsPanel.tsx`: renders the export controls once a result exists.
+- `src/features/simulator/ResultsPanel.test.tsx`: verifies a terminal-outcomes action creates the expected Blob payload and revokes its URL.
+- `e2e/simulator.spec.ts`: the completed Bootstrap run smoke test observes a real terminal-outcomes CSV download and checks its filename suffix.
+
+### CSV layout
+
+Every file is CRLF-delimited RFC 4180 CSV with stable ASCII `snake_case` headers. Text cells are quoted; embedded quotes are doubled. Text beginning with `=`, `+`, `-`, or `@` receives a leading apostrophe before quoting to prevent spreadsheet formula execution. Finite numbers use locale-independent JavaScript decimal formatting; null, undefined, `NaN`, and infinities are empty cells. This preserves a real terminal zero for an insolvent path while keeping malformed accounting failures distinguishable as unavailable numeric output.
+
+- **`*-run-metadata.csv`** has one row: export schema version; dataset version/checksum/frequency/base currency; model, PRNG, quantile, metrics, and accounting versions; seed; paths; periods; initial investment; portfolio IDs/weights as JSON; cash-flow, rebalancing, transaction-cost, tax, leverage, reset, and benchmark settings. Inactive discriminated-union fields are empty.
+- **`*-metric-summaries.csv`** has one row per metric. Distribution rows carry p01/p10/p25/p50/p75/p90/p99 where that metric defines them plus `available_path_count`; scalar rows use `scalar_value`. It includes terminal wealth, CAGR/IRR, volatility, Sharpe, drawdown, transaction costs, realised gain/loss, tax, carryforward, borrowing interest, loss/ruin/margin-call probabilities, and benchmark difference/outperformance fields when a benchmark was selected.
+- **`*-terminal-outcomes.csv`** has exactly one row for every configured path, ordered by `path_index`: `path_status`, after-liquidation terminal wealth, optional benchmark terminal wealth/difference, explicit `benchmark_comparable`, and failure period/code/message. A path is `completed`, `insolvent`, or `failed`; no path is omitted merely because its terminal numeric value is unavailable.
+- **`*-retained-path-details.csv`** contains period zero and every simulated period for the retained prefix only. Its rows include source date/index, equity, gross contribution, price level, intended/executed trades, costs, realised gain/loss, tax, basis, carryforward, and retained leverage evidence. Trade arrays are quoted JSON with `assetId`, `assetIndex`, signed value, and, when executed, transaction cost. Period-zero source/trade fields are intentionally empty/empty-array evidence rather than invented events.
+
+### Validation completed
+
+- Focused export tests: `csvExport.test.ts` and `ResultsPanel.test.tsx`, **7 tests passed**.
+- Complete Vitest suite: **33 files and 271 tests passed**.
+- `npm run lint`: passed with no warnings after isolating the browser helper from the React component for Fast Refresh.
+- `npm run format`: passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: **5 browser smoke tests passed**, including a completed released-data Bootstrap run that downloaded `*-terminal-outcomes.csv`.
+
+### Next step
+
+Phase 10: release monthly USD through the same artifact contract, then add EUR only after its FX routes, HICP, EUR short-rate, provenance, and browser-equivalent validation gate are complete.
