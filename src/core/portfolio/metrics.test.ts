@@ -15,7 +15,7 @@ import {
 
 describe('METRICS_VERSION', () => {
   it('is the versioned identifier carried into result metadata', () => {
-    expect(METRICS_VERSION).toBe('metrics-v2')
+    expect(METRICS_VERSION).toBe('metrics-v3')
   })
 })
 
@@ -152,10 +152,13 @@ describe('summarizeAcrossPaths', () => {
     const summary = summarizeAcrossPaths(new Float64Array([3, NaN, 1, 2]))
     expect(summary).not.toBeNull()
     // Sorted finite cross-section [1, 2, 3]: h = (3-1)q gives
-    // p10 -> h = 0.2 -> 1.2; p50 -> 2; p90 -> h = 1.8 -> 2.8.
+    // p01 -> h = 0.02 -> 1.02; p10 -> 1.2; p50 -> 2; p90 -> 2.8;
+    // p99 -> h = 1.98 -> 2.98.
+    expect(summary?.p01).toBeCloseTo(1.02, 12)
     expect(summary?.p10).toBeCloseTo(1.2, 12)
     expect(summary?.p50).toBe(2)
     expect(summary?.p90).toBeCloseTo(2.8, 12)
+    expect(summary?.p99).toBeCloseTo(2.98, 12)
     expect(summary?.availablePathCount).toBe(3)
   })
 

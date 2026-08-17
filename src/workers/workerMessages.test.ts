@@ -48,6 +48,7 @@ function createResult(retainedPathCount: number): SimulationResult {
         frequency: 'weekly',
         baseCurrency: 'USD',
       },
+      portfolioAssetIds: ['AAA'],
       datasetDates: ['2020-01-05', '2020-01-12'],
       benchmarkAssetId: null,
       algorithms: {

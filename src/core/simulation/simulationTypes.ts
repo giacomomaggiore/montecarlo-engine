@@ -100,6 +100,10 @@ export type AlgorithmVersions = {
 export type SimulationRunMetadata = {
   readonly config: SimulationConfig
   readonly dataset: DatasetIdentity
+  // Asset IDs in portfolio-weight/order-list position. Kept with the
+  // completed result so audit/export consumers never need mutable UI state
+  // to identify an executed order's assetIndex.
+  readonly portfolioAssetIds: readonly string[]
   // The aligned dataset's common-history date axis (one ISO date per aligned
   // row). Carried so the UI can translate a bootstrap scenario's
   // sourceRowIndex back into the real historical week it was copied from --

@@ -10,3 +10,9 @@ test-results/
 *.tsbuildinfo
 CLAUDE.MD
 .env
+./agents
+./claude
+./venv
+./vscode
+./github
+CLAUDE.MD

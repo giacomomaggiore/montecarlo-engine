@@ -69,13 +69,14 @@ function MetricRow({
     return (
       <tr>
         <th scope="row">{label}</th>
-        <td colSpan={3}>N/A — {unavailableReason}</td>
+        <td colSpan={5}>N/A — {unavailableReason}</td>
       </tr>
     )
   }
   return (
     <tr>
       <th scope="row">{label}</th>
+      <td>{format(summary.p01)}</td>
       <td>{format(summary.p10)}</td>
       <td>
         {format(summary.p50)}
@@ -87,6 +88,7 @@ function MetricRow({
         )}
       </td>
       <td>{format(summary.p90)}</td>
+      <td>{format(summary.p99)}</td>
     </tr>
   )
 }
@@ -109,38 +111,22 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
         <Link to="/education">Definitions</Link>
       </p>
 
-      {terminalWealth === null ? (
+      {terminalWealth === null && (
         <p role="alert">Terminal wealth: N/A — every simulated path failed.</p>
-      ) : (
-        <table className="metrics-table">
-          <caption>Terminal wealth after final liquidation (nominal)</caption>
-          <thead>
-            <tr>
-              {(['p10', 'p25', 'p50', 'p75', 'p90'] as const).map((level) => (
-                <th key={level} scope="col">
-                  {level}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {(['p10', 'p25', 'p50', 'p75', 'p90'] as const).map((level) => (
-                <td key={level}>{currency.format(terminalWealth[level])}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
       )}
 
       <table className="metrics-table">
-        <caption>Distribution across paths (p10 / median / p90)</caption>
+        <caption>
+          Distribution across paths (p01 / p10 / median / p90 / p99)
+        </caption>
         <thead>
           <tr>
             <th scope="col">Metric</th>
+            <th scope="col">p01</th>
             <th scope="col">p10</th>
             <th scope="col">Median</th>
             <th scope="col">p90</th>
+            <th scope="col">p99</th>
           </tr>
         </thead>
         <tbody>
@@ -375,6 +361,9 @@ function PathInspector({
                 {displayMode === 'real' && <th scope="col">Real equity</th>}
                 <th scope="col">Contribution</th>
                 {selected.leverage != null && <th scope="col">Debt</th>}
+                {selected.leverage != null && (
+                  <th scope="col">Gross leverage</th>
+                )}
                 {selected.leverage != null && <th scope="col">Margin</th>}
                 {selected.leverage != null && (
                   <th scope="col">Leverage event</th>
@@ -425,6 +414,14 @@ function PathInspector({
                     {selected.leverage != null && (
                       <td>
                         {currency.format(selected.leverage.debts[periodIndex])}
+                      </td>
+                    )}
+                    {selected.leverage != null && (
+                      <td>
+                        {ratio.format(
+                          selected.leverage.grossLeverages[periodIndex],
+                        )}
+                        x
                       </td>
                     )}
                     {selected.leverage != null && (
@@ -505,6 +502,18 @@ export function ResultsPanel({
   const { config } = result.metadata
   const periodsPerYear =
     result.metadata.dataset.frequency === 'weekly' ? 52 : 12
+  const leverageLabel =
+    config.leverage?.mode === 'enabled'
+      ? `leverage ${ratio.format(config.leverage.targetGrossExposure)}x, maintenance ${percent.format(config.leverage.maintenanceMargin)}, spread ${percent.format(config.leverage.annualBorrowingSpread)}`
+      : 'no leverage'
+  const failureSummary = Array.from(
+    result.failures.reduce((counts, failure) => {
+      counts.set(failure.code, (counts.get(failure.code) ?? 0) + 1)
+      return counts
+    }, new Map<string, number>()),
+  )
+    .map(([code, count]) => `${code}: ${count}`)
+    .join(', ')
 
   return (
     <section aria-labelledby="results-heading" className="results-panel">
@@ -522,14 +531,14 @@ export function ResultsPanel({
         {currency.format(config.transactionCosts?.fixedPerOrder ?? 0)},
         proportional cost{' '}
         {percent.format(config.transactionCosts?.proportionalRate ?? 0)}, tax{' '}
-        {percent.format(config.tax?.capitalGainsRate ?? 0)}. Edits made to the
-        settings above do not apply until the next run.
+        {percent.format(config.tax?.capitalGainsRate ?? 0)}, {leverageLabel}.
+        Edits made to the settings above do not apply until the next run.
       </p>
 
       {result.failures.length > 0 && (
         <p role="alert">
           {result.failures.length} path(s) failed during accounting and are
-          excluded from metrics (see ruin probability).
+          excluded from metrics (see ruin probability). {failureSummary}
         </p>
       )}
 

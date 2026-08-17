@@ -22,14 +22,16 @@ import { computeQuantile } from '../math/quantiles'
 // Versioned per the Financial Rules: metric definitions are part of a
 // result's reproducible identity, exactly like the PRNG and model versions.
 // Any change to a formula below requires bumping this string.
-export const METRICS_VERSION = 'metrics-v2'
+export const METRICS_VERSION = 'metrics-v3'
 
 // Cross-sectional summary of one per-path metric. availablePathCount says how
 // many paths actually produced a defined value — the honest denominator.
 export type MetricSummary = {
+  readonly p01: number
   readonly p10: number
   readonly p50: number
   readonly p90: number
+  readonly p99: number
   readonly availablePathCount: number
 }
 
@@ -316,7 +318,7 @@ export function computeAnnualizedIrr(
 // ---------------------------------------------------------------------------
 
 // Reduce one per-path metric (length-N array, NaN = unavailable for that
-// path) to p10/p50/p90 across paths. Time O(N log N) for the sort; space
+// path) to p01/p10/p50/p90/p99 across paths. Time O(N log N) for the sort; space
 // O(N) for the finite copy. Returns null when NO path produced a value, so
 // the UI can render one honest N/A instead of NaN arithmetic.
 export function summarizeAcrossPaths(
@@ -333,9 +335,11 @@ export function summarizeAcrossPaths(
   }
   finiteValues.sort((a, b) => a - b)
   return {
+    p01: computeQuantile(finiteValues, 0.01),
     p10: computeQuantile(finiteValues, 0.1),
     p50: computeQuantile(finiteValues, 0.5),
     p90: computeQuantile(finiteValues, 0.9),
+    p99: computeQuantile(finiteValues, 0.99),
     availablePathCount: finiteValues.length,
   }
 }

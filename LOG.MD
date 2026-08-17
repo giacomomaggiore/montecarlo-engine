@@ -986,3 +986,46 @@ Phase 8: leverage and margin calls. It can reuse Phase 7's sale execution and ta
 ### Next step
 
 Phase 9: CSV export of completed-run metadata, all terminal outcomes, and bounded retained-path detail.
+
+## 2026-08-17 - Phase 8 diagnostic: Student's t leverage boundary checks
+
+### Trigger
+
+A browser result showed a parametric 2,000-path, 520-week run with 1,991 accounting failures and representative paths ending near period 115. That is not coherent as an ordinary unlevered Student's t result: sampled log returns convert through `expm1`, so every generated simple return remains strictly above -100%, and unlevered long-only holdings cannot become insolvent from a finite return path.
+
+The original completed-run label omitted leverage settings, so the screenshot could not establish whether leverage, maintenance margin, borrowing spread, or a reset rule caused the failures. Updated `ResultsPanel.tsx` to include the completed run's leverage multiple, maintenance margin, and spread. It also now reports counts by stable failure code, so a future result can distinguish `insolvent` paths from a malformed accounting failure directly in the UI.
+
+### Boundary and statistical checks
+
+- **Live browser, no leverage:** selected SPY, Parametric engine, seed 42, 2,000 paths, 520 weeks, historical fitted returns, automatic degrees of freedom, 2% inflation, and 3% risk-free rate. The run completed with **0 accounting failures**. This isolates the reported mass failure from the Student's t sampler and ordinary portfolio accounting.
+- **Live browser, maintenance boundary:** the same run with $L=4$, $m=25\%$, and zero borrowing spread completed with **1 accounting failure out of 2,000 paths**. This is the intentionally no-buffer case $L=1/m$, so a small loss or interest accrual can trigger a call; it still does not resemble the screenshot's 1,991 failures.
+- **Deterministic normal-leverage stress regression:** added `runSimulation.test.ts` coverage for 500 paths x 520 weeks using a seeded one-asset $t_{100}$ model ($\mu=0.001$, log-return scale $0.02$), $L=2$, $m=30\%$, zero spread, and annual time-based leverage resets. It executes 260,000 path-periods and repeated post-fee bisection resets. Result: **0 failures and ruin probability 0**. The test has an explicit 15-second timeout because its deterministic reset solver performs up to 60 bisection steps per reset.
+- **Maintenance boundary invariants:** existing pure leverage tests prove equality $E/G=m$ does not call, just-below-margin does call, and a 20% loss in a $2\times$ one-asset portfolio with $m=40\%$ triggers a proportional sale to $G=1,200$, $D=600$, $E=600$, $G/E=2$. A -50% gross-asset shock correctly produces `insolvent`, terminal wealth zero, and ruin probability one.
+- **Parametric distribution checks:** `parametricStudentT.test.ts` re-ran the independently verified fit/scenario checks, seeded reproducibility, $\nu$ scale conversion, generated log-return mean/correlation tolerances (20,000 draws), and the expected ordering of $t_5$ versus $t_{100}$ excess kurtosis (50,000 draws). All passed.
+
+### Conclusion
+
+The displayed chart's single surviving-looking trajectory is mechanically valid because failed paths are represented as `NaN` and omitted from representative-path selection. The **failure rate itself is a red flag**, not a normal characteristic of the Student's t model or ordinary $2\times$ leverage. The evidence rules out the default parametric model, standard $2\times$/30% leverage, and even the exact $4\times$/25% maintenance boundary as explanations for 1,991 failures under the tested seed/settings.
+
+The next reproduction should retain the now-visible completed-run leverage fields and failure-code summary. If the count recurs, the failure code will identify whether a specific reset/cost/tax combination is generating `insolvent` paths or whether another ledger validation path is involved.
+
+### Validation completed
+
+- Focused `parametricStudentT.test.ts`, `runSimulation.test.ts`, and `ResultsPanel.test.tsx`: **33 tests passed**.
+- Live-browser reproductions: no-leverage run (0 failures); $4\times$/25% boundary run (1 failure).
+
+## 2026-08-17 - Results quantile and path-inspection refinement
+
+### Scope completed
+
+- Expanded the canonical cross-sectional `MetricSummary` from p10/p50/p90 to **p01/p10/p50/p90/p99**. This applies consistently to CAGR or IRR, volatility, Sharpe ratio, drawdown, transaction costs, borrowing interest, realised gain/loss, taxes, loss carryforward, and paired benchmark terminal differences.
+- Bumped `METRICS_VERSION` from `metrics-v2` to `metrics-v3`, so exports and completed results identify the expanded summary rule.
+- Removed the redundant "Terminal wealth after final liquidation" table from `ResultsPanel`. Terminal outcomes remain available in the real-path chart table, while the metrics table now carries the common five-quantile summary layout.
+- Added a **Gross leverage** column to the retained-path inspector immediately before **Margin**. It displays $G_t/E_t$, where gross assets $G_t$ are the period's holdings total and $E_t$ is equity after debt, fees, tax, and any leverage action.
+
+### Validation completed
+
+- `metrics.test.ts`, `runSimulation.test.ts`, and `ResultsPanel.test.tsx`: **36 tests passed**.
+- The metric-summary interpolation test now independently checks p01 = 1.02 and p99 = 2.98 for the finite sample `[1, 2, 3]`, under the app's canonical linear rule.
+- `npx tsc --noEmit -p tsconfig.app.json`: passed.
+- Complete Vitest suite: **32 files, 268 tests passed**.

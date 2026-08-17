@@ -754,6 +754,9 @@ export function runSimulation(
       metadata: {
         config,
         dataset: dataset.identity,
+        portfolioAssetIds: selection.portfolioAssetIndices.map(
+          (assetIndex) => dataset.assetIds[assetIndex],
+        ),
         // A copy, not the dataset's own array reference: the result must stay
         // self-contained once the dataset is released.
         datasetDates: [...dataset.dates],

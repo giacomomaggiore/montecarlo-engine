@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AlignedDataset } from '../data/datasetTypes'
 import { createHistoricalBootstrapEngine } from './historicalBootstrap'
+import {
+  createParametricStudentTEngine,
+  type ParametricStudentTModel,
+} from './parametricStudentT'
 import { RETAINED_PATH_COUNT, runSimulation } from './runSimulation'
 import type { SimulationEngine } from './simulationEngine'
 import type { PeriodScenario, SimulationConfig } from './simulationTypes'
@@ -40,6 +44,59 @@ function createConfig(
 }
 
 describe('runSimulation', () => {
+  it('keeps ordinary 2x Student-t leverage far below screenshot-scale failure rates', () => {
+    const periods = 520
+    const dataset: AlignedDataset = {
+      identity: {
+        version: 'stress-weekly',
+        checksum: 'stress',
+        frequency: 'weekly',
+        baseCurrency: 'USD',
+      },
+      assetIds: ['AAA'],
+      dates: Array.from(
+        { length: periods },
+        (_, index) => `2020-01-${String((index % 28) + 1).padStart(2, '0')}`,
+      ),
+      assetReturns: [new Float32Array(periods)],
+      inflation: new Float32Array(periods),
+      riskFreeRates: new Float32Array(periods),
+    }
+    const model: ParametricStudentTModel = {
+      location: [0.001],
+      choleskyFactor: [[0.02]],
+      degreesOfFreedom: 100,
+      periodInflation: 0,
+      periodRiskFreeRate: 0,
+      diagnostics: { pooledExcessKurtosis: 0, correlationWasRepaired: false },
+    }
+    const result = runSimulation({
+      engine: createParametricStudentTEngine(model, 42),
+      dataset,
+      config: {
+        weights: [1],
+        initialInvestment: 10_000,
+        cashFlow: { mode: 'lumpSum' },
+        leverage: {
+          mode: 'enabled',
+          targetGrossExposure: 2,
+          maintenanceMargin: 0.3,
+          annualBorrowingSpread: 0,
+          reset: { mode: 'time', everyPeriods: 52 },
+        },
+        paths: 500,
+        periods,
+        seed: 42,
+      },
+      modelVersion: 'synthetic-student-t',
+      prngVersion: 'xoshiro128**-v1',
+    })
+
+    if (!result.ok) throw new Error('expected a valid stress configuration')
+    expect(result.value.failures.length).toBe(0)
+    expect(result.value.metrics.ruinProbability).toBe(0)
+  }, 15_000)
+
   it('marks a debt-funded total equity wipeout as insolvent with zero terminal wealth', () => {
     const dataset = createDataset()
     const engine: SimulationEngine = {
@@ -160,7 +217,7 @@ describe('runSimulation', () => {
       model: 'historical-bootstrap-v1',
       prng: 'xoshiro128**-v1',
       quantile: 'quantile-linear-interpolation-v1',
-      metrics: 'metrics-v2',
+      metrics: 'metrics-v3',
       accounting: 'cost-tax-accounting-v1',
     })
     // The result must carry the aligned date axis so the UI can map a
@@ -421,9 +478,11 @@ describe('runSimulation', () => {
     ])
     expect(result.value.metrics.benchmark).toEqual({
       terminalDifference: {
+        p01: 180,
         p10: 180,
         p50: 180,
         p90: 180,
+        p99: 180,
         availablePathCount: 1,
       },
       outperformanceProbability: 1,

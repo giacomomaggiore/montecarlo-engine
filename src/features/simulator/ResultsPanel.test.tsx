@@ -29,6 +29,7 @@ function fixtureResult(): SimulationResult {
         frequency: 'weekly',
         baseCurrency: 'USD',
       },
+      portfolioAssetIds: ['AAA'],
       datasetDates: ['2020-01-05', '2020-01-12', '2020-01-19'],
       benchmarkAssetId: null,
       algorithms: {
@@ -52,23 +53,62 @@ function fixtureResult(): SimulationResult {
       ruinProbability: 0,
       growth: {
         kind: 'cagr',
-        summary: { p10: 0.05, p50: 0.1, p90: 0.15, availablePathCount: 2 },
+        summary: {
+          p01: 0.05,
+          p10: 0.05,
+          p50: 0.1,
+          p90: 0.15,
+          p99: 0.15,
+          availablePathCount: 2,
+        },
       },
       annualizedVolatility: {
+        p01: 0.1,
         p10: 0.1,
         p50: 0.12,
         p90: 0.14,
+        p99: 0.14,
         availablePathCount: 2,
       },
       sharpeRatio: null,
-      maxDrawdown: { p10: 0.02, p50: 0.05, p90: 0.09, availablePathCount: 2 },
-      transactionCosts: { p10: 1, p50: 2, p90: 3, availablePathCount: 2 },
-      realizedGainLoss: { p10: -1, p50: 1, p90: 3, availablePathCount: 2 },
-      taxesPaid: { p10: 0, p50: 1, p90: 2, availablePathCount: 2 },
-      lossCarryforward: {
+      maxDrawdown: {
+        p01: 0.02,
+        p10: 0.02,
+        p50: 0.05,
+        p90: 0.09,
+        p99: 0.09,
+        availablePathCount: 2,
+      },
+      transactionCosts: {
+        p01: 1,
+        p10: 1,
+        p50: 2,
+        p90: 3,
+        p99: 3,
+        availablePathCount: 2,
+      },
+      realizedGainLoss: {
+        p01: -1,
+        p10: -1,
+        p50: 1,
+        p90: 3,
+        p99: 3,
+        availablePathCount: 2,
+      },
+      taxesPaid: {
+        p01: 0,
         p10: 0,
         p50: 1,
         p90: 2,
+        p99: 2,
+        availablePathCount: 2,
+      },
+      lossCarryforward: {
+        p01: 0,
+        p10: 0,
+        p50: 1,
+        p90: 2,
+        p99: 2,
         availablePathCount: 2,
       },
       benchmark: null,
@@ -139,10 +179,8 @@ describe('ResultsPanel', () => {
 
   it('renders metric medians and an N/A with its reason for an unavailable metric', () => {
     renderPanel()
-    // Median CAGR 10% (also volatility's p10 in this fixture), and the
-    // five terminal-wealth percentiles.
+    // Median CAGR 10% (also volatility's p01/p10 in this fixture).
     expect(screen.getAllByText('10.0%').length).toBeGreaterThan(0)
-    expect(screen.getByText('$1,055')).toBeInTheDocument()
     // Sharpe is null in the fixture: the row must say WHY, not just "N/A".
     expect(
       screen.getByText(/N\/A — excess returns had zero variance/),
@@ -156,6 +194,11 @@ describe('ResultsPanel', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Cumulative transaction costs')).toBeInTheDocument()
     expect(screen.getByText('Capital-gains tax paid')).toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader', { name: 'p01' }).length).toBe(1)
+    expect(screen.getAllByRole('columnheader', { name: 'p99' }).length).toBe(1)
+    expect(
+      screen.queryByText('Terminal wealth after final liquidation (nominal)'),
+    ).not.toBeInTheDocument()
   })
 
   it('shows nominal terminal values by default and per-path deflated values in real mode', () => {

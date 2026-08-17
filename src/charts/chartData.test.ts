@@ -40,6 +40,7 @@ function resultWithPaths(
         frequency: 'weekly',
         baseCurrency: 'USD',
       },
+      portfolioAssetIds: ['AAA'],
       datasetDates: ['2020-01-05'],
       benchmarkAssetId: null,
       algorithms: { model: 'm', prng: 'p', quantile: 'q', metrics: 'x' },
