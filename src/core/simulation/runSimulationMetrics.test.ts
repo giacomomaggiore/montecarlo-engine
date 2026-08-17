@@ -183,7 +183,7 @@ describe('runSimulation — streaming metrics (Phase 4.2)', () => {
     expect(result.metrics.ruinProbability).toBe(0)
   })
 
-  it('reports null metric summaries, full loss, and full ruin when every path fails', () => {
+  it('reports null metric summaries and full loss without calling an engine failure ruin', () => {
     // A defective engine producing a non-finite return at period 2 — the
     // same explicit-failure contract runSimulation.test.ts already proves
     // for equity buffers, now checked for the metrics layer.
@@ -200,7 +200,7 @@ describe('runSimulation — streaming metrics (Phase 4.2)', () => {
     expect(result.metrics.sharpeRatio).toBeNull()
     expect(result.metrics.maxDrawdown).toBeNull()
     expect(result.metrics.lossProbability).toBe(1)
-    expect(result.metrics.ruinProbability).toBe(1)
+    expect(result.metrics.ruinProbability).toBe(0)
 
     // Post-failure periods are NaN ("stopped simulating"), never 0 or a
     // stale price level, in every retained series.

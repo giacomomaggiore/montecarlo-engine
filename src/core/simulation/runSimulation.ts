@@ -6,6 +6,7 @@ import {
 } from '../math/quantiles'
 import {
   allocateInitialInvestment,
+  applyPeriodReturn,
   stepPortfolioPeriod,
 } from '../portfolio/cashFlows'
 import {
@@ -13,6 +14,17 @@ import {
   stepBenchmarkPeriod,
 } from '../portfolio/benchmark'
 import { rebalancePortfolio } from '../portfolio/rebalancing'
+import {
+  applyExecutedTrades,
+  createContributionTrades,
+  fundRebalanceBuys,
+  priceTrades,
+} from '../portfolio/transactionCosts'
+import {
+  applyTaxableBuys,
+  applyTaxableSales,
+  initializeTaxState,
+} from '../portfolio/taxes'
 import {
   computeAnnualizedIrr,
   computeCagr,
@@ -28,11 +40,14 @@ import type { SimulationEngine } from './simulationEngine'
 import type {
   PeriodScenario,
   RepresentativePath,
+  RebalancingConfig,
   RetainedPath,
   SimulationAssetSelection,
   SimulationConfig,
   SimulationFailure,
   SimulationResult,
+  TaxConfig,
+  TransactionCostConfig,
 } from './simulationTypes'
 import { validateSimulationConfig } from './simulationTypes'
 
@@ -127,6 +142,10 @@ export function runSimulation(
   const volatilityPerPath = new Float64Array(paths)
   const sharpePerPath = new Float64Array(paths)
   const drawdownPerPath = new Float64Array(paths)
+  const transactionCostsPerPath = new Float64Array(paths)
+  const realizedGainLossPerPath = new Float64Array(paths)
+  const taxesPaidPerPath = new Float64Array(paths)
+  const lossCarryforwardPerPath = new Float64Array(paths)
   // Reusable IRR schedule scratch (investor-perspective net cash flows):
   // one O(T) buffer reused by every path, never O(N * T) storage.
   const cashFlowScratch = new Float64Array(periodCount)
@@ -135,6 +154,10 @@ export function runSimulation(
   const failures: SimulationFailure[] = []
   const retainedPaths: RetainedPath[] = []
   const retainedCount = Math.min(RETAINED_PATH_COUNT, paths)
+  const hasPortfolioFriction =
+    (config.transactionCosts?.fixedPerOrder ?? 0) > 0 ||
+    (config.transactionCosts?.proportionalRate ?? 0) > 0 ||
+    (config.tax?.capitalGainsRate ?? 0) > 0
 
   // Time complexity: O(N * T) — one engine draw, one accounting step, and one
   // O(1) metrics update per path per period, matching the N (paths) * T
@@ -161,11 +184,29 @@ export function runSimulation(
     const retainedTrades:
       (readonly import('../portfolio/rebalancing').PortfolioTrade[])[] | null =
       isRetained ? Array.from({ length: periodCount }, () => []) : null
+    const retainedExecutedTrades:
+      | (readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[])[]
+      | null = isRetained ? Array.from({ length: periodCount }, () => []) : null
+    const retainedTransactionCosts = isRetained
+      ? new Float64Array(periodCount)
+      : null
+    const retainedRealizedGainLosses = isRetained
+      ? new Float64Array(periodCount)
+      : null
+    const retainedTaxesPaid = isRetained ? new Float64Array(periodCount) : null
+    const retainedCostBases = isRetained ? new Float64Array(periodCount) : null
+    const retainedLossCarryforwards = isRetained
+      ? new Float64Array(periodCount)
+      : null
 
     let holdings: readonly number[] = allocateInitialInvestment(
       initialInvestment,
       weights,
     )
+    let taxState = initializeTaxState(initialInvestment, weights, config.tax)
+    let cumulativeTransactionCosts = 0
+    let cumulativeRealizedGainLoss = 0
+    let cumulativeTaxesPaid = 0
     let equity = sum(holdings)
     let benchmarkValue =
       selection.benchmarkAssetIndex === null
@@ -175,6 +216,7 @@ export function runSimulation(
     priceLevelByPeriod[pathIndex] = 1
     retainedValues?.set([equity], 0)
     retainedPriceLevels?.set([1], 0)
+    retainedCostBases?.set([sum(taxState.costBases)], 0)
     // retainedContributions[0] stays 0: the initial investment is capital
     // allocation, not a scheduled contribution.
 
@@ -188,8 +230,17 @@ export function runSimulation(
     cashFlowScratch.fill(0)
 
     let failedAtPeriod = -1
+    let finalPeriodMetric:
+      | {
+          readonly startEquity: number
+          readonly contribution: number
+          readonly riskFreeRate: number
+          readonly neutralReturn: number
+        }
+      | undefined
 
     for (let periodIndex = 1; periodIndex <= periods; periodIndex += 1) {
+      const startEquity = equity
       const scenario = engine.nextScenario()
       const portfolioScenario: PeriodScenario = {
         ...scenario,
@@ -236,29 +287,90 @@ export function runSimulation(
         benchmarkValue = benchmarkResult.value
       }
 
-      // Rebalancing is a frictionless post-contribution value reshuffle in
-      // Phase 6. It changes next-period exposure but not this period's equity,
-      // contribution, or neutral return.
-      const rebalanced = rebalancePortfolio(
-        result.holdings,
-        weights,
-        config.rebalancing,
-        periodIndex,
-      )
+      let periodNeutralReturn = result.neutralReturn
+      let intendedTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[] =
+        []
+      let executedTrades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[] =
+        []
+      let periodTransactionCosts = 0
+      let periodRealizedGainLoss = 0
+      let periodTaxesPaid = 0
 
-      holdings = rebalanced.holdings
-      equity = result.equity
+      if (hasPortfolioFriction) {
+        const ledger = executeCostedPortfolioPeriod({
+          holdings,
+          assetReturns: portfolioScenario.assetReturns,
+          contribution: result.contribution,
+          weights,
+          rebalancing: config.rebalancing,
+          periodIndex,
+          transactionCosts: config.transactionCosts,
+          tax: config.tax,
+          taxState,
+        })
+        if (!ledger.ok) {
+          failures.push({
+            pathIndex,
+            periodIndex,
+            code: ledger.errors[0].code,
+            message: ledger.errors[0].message,
+          })
+          failedAtPeriod = periodIndex
+          break
+        }
+
+        holdings = ledger.value.holdings
+        taxState = ledger.value.taxState
+        equity = sum(holdings)
+        periodNeutralReturn =
+          startEquity > 0
+            ? (equity - result.contribution) / startEquity - 1
+            : NaN
+        intendedTrades = ledger.value.intendedTrades
+        executedTrades = ledger.value.executedTrades
+        periodTransactionCosts = ledger.value.transactionCosts
+        periodRealizedGainLoss = ledger.value.realizedGainLoss
+        periodTaxesPaid = ledger.value.taxesPaid
+      } else {
+        // The Phase 6 path is left byte-for-byte equivalent when friction is
+        // disabled: its zero-cost trades are still exposed as executed events.
+        const rebalanced = rebalancePortfolio(
+          result.holdings,
+          weights,
+          config.rebalancing,
+          periodIndex,
+        )
+        holdings = rebalanced.holdings
+        equity = result.equity
+        intendedTrades = rebalanced.trades
+        executedTrades = priceTrades(rebalanced.trades, undefined).trades
+      }
+
+      cumulativeTransactionCosts += periodTransactionCosts
+      cumulativeRealizedGainLoss += periodRealizedGainLoss
+      cumulativeTaxesPaid += periodTaxesPaid
       equityByPeriod[periodIndex * paths + pathIndex] = equity
 
       cumulativeLogInflation += scenario.inflation
       const priceLevel = Math.exp(cumulativeLogInflation)
       priceLevelByPeriod[periodIndex * paths + pathIndex] = priceLevel
 
-      metricsAccumulator.recordPeriod(
-        result.contribution,
-        result.neutralReturn,
-        scenario.riskFreeRate,
-      )
+      // The terminal period is finalized only after the one mandatory
+      // liquidation below. Earlier periods can stream directly into metrics.
+      if (periodIndex === periods) {
+        finalPeriodMetric = {
+          startEquity,
+          contribution: result.contribution,
+          riskFreeRate: scenario.riskFreeRate,
+          neutralReturn: periodNeutralReturn,
+        }
+      } else {
+        metricsAccumulator.recordPeriod(
+          result.contribution,
+          periodNeutralReturn,
+          scenario.riskFreeRate,
+        )
+      }
       // Investor-perspective flow: a contribution is money leaving the
       // investor's pocket, hence negative in the IRR schedule.
       cashFlowScratch[periodIndex] = -result.contribution
@@ -271,8 +383,16 @@ export function runSimulation(
       retainedPriceLevels?.set([priceLevel], periodIndex)
       retainedScenarios?.push(scenario)
       if (retainedTrades !== null) {
-        retainedTrades[periodIndex] = rebalanced.trades
+        retainedTrades[periodIndex] = intendedTrades
       }
+      if (retainedExecutedTrades !== null) {
+        retainedExecutedTrades[periodIndex] = executedTrades
+      }
+      retainedTransactionCosts?.set([periodTransactionCosts], periodIndex)
+      retainedRealizedGainLosses?.set([periodRealizedGainLoss], periodIndex)
+      retainedTaxesPaid?.set([periodTaxesPaid], periodIndex)
+      retainedCostBases?.set([sum(taxState.costBases)], periodIndex)
+      retainedLossCarryforwards?.set([taxState.lossCarryforward], periodIndex)
     }
 
     const failed = failedAtPeriod !== -1
@@ -295,38 +415,127 @@ export function runSimulation(
       }
     }
 
-    terminalWealth[pathIndex] = failed ? NaN : equity
+    if (!failed && hasPortfolioFriction) {
+      const liquidation = liquidatePortfolio(
+        holdings,
+        taxState,
+        config.transactionCosts,
+        config.tax,
+      )
+      if (!liquidation.ok) {
+        failures.push({
+          pathIndex,
+          periodIndex: periods,
+          code: liquidation.errors[0].code,
+          message: liquidation.errors[0].message,
+        })
+        failedAtPeriod = periods
+      } else {
+        equity = liquidation.value.terminalWealth
+        taxState = liquidation.value.taxState
+        cumulativeTransactionCosts += liquidation.value.transactionCosts
+        cumulativeRealizedGainLoss += liquidation.value.realizedGainLoss
+        cumulativeTaxesPaid += liquidation.value.taxesPaid
+        equityByPeriod[periods * paths + pathIndex] = equity
+        retainedValues?.set([equity], periods)
+        if (retainedExecutedTrades !== null) {
+          retainedExecutedTrades[periods] = [
+            ...retainedExecutedTrades[periods],
+            ...liquidation.value.executedTrades,
+          ]
+        }
+        retainedTransactionCosts?.set(
+          [
+            retainedTransactionCosts[periods] +
+              liquidation.value.transactionCosts,
+          ],
+          periods,
+        )
+        retainedRealizedGainLosses?.set(
+          [
+            retainedRealizedGainLosses[periods] +
+              liquidation.value.realizedGainLoss,
+          ],
+          periods,
+        )
+        retainedTaxesPaid?.set(
+          [retainedTaxesPaid[periods] + liquidation.value.taxesPaid],
+          periods,
+        )
+        retainedCostBases?.set([sum(taxState.costBases)], periods)
+        retainedLossCarryforwards?.set([taxState.lossCarryforward], periods)
+      }
+    }
+
+    const failedAfterLiquidation = failedAtPeriod !== -1
+    if (!failedAfterLiquidation && finalPeriodMetric !== undefined) {
+      const finalNeutralReturn = hasPortfolioFriction
+        ? finalPeriodMetric.startEquity > 0
+          ? (equity - finalPeriodMetric.contribution) /
+              finalPeriodMetric.startEquity -
+            1
+          : NaN
+        : finalPeriodMetric.neutralReturn
+      metricsAccumulator.recordPeriod(
+        finalPeriodMetric.contribution,
+        finalNeutralReturn,
+        finalPeriodMetric.riskFreeRate,
+      )
+    }
+
+    if (failedAfterLiquidation && !failed) {
+      equityByPeriod[periods * paths + pathIndex] = NaN
+      priceLevelByPeriod[periods * paths + pathIndex] = NaN
+      retainedValues?.set([NaN], periods)
+      retainedContributions?.set([NaN], periods)
+      retainedPriceLevels?.set([NaN], periods)
+      retainedTransactionCosts?.set([NaN], periods)
+      retainedRealizedGainLosses?.set([NaN], periods)
+      retainedTaxesPaid?.set([NaN], periods)
+      retainedCostBases?.set([NaN], periods)
+      retainedLossCarryforwards?.set([NaN], periods)
+    }
+
+    terminalWealth[pathIndex] = failedAfterLiquidation ? NaN : equity
     if (benchmarkTerminalWealth !== null) {
       benchmarkTerminalWealth[pathIndex] =
-        failed || benchmarkValue === null ? NaN : benchmarkValue
+        failedAfterLiquidation || benchmarkValue === null ? NaN : benchmarkValue
     }
 
     // Per-path metric values. A failed path has NO defined metrics (NaN
     // everywhere) but DOES count as a loss: it certainly did not beat its
     // own contributed capital.
-    if (failed) {
+    if (failedAfterLiquidation) {
       growthPerPath[pathIndex] = NaN
       volatilityPerPath[pathIndex] = NaN
       sharpePerPath[pathIndex] = NaN
       drawdownPerPath[pathIndex] = NaN
+      transactionCostsPerPath[pathIndex] = NaN
+      realizedGainLossPerPath[pathIndex] = NaN
+      taxesPaidPerPath[pathIndex] = NaN
+      lossCarryforwardPerPath[pathIndex] = NaN
       lossCount += 1
     } else {
       const pathMetrics = metricsAccumulator.finish()
       volatilityPerPath[pathIndex] = pathMetrics.annualizedVolatility
       sharpePerPath[pathIndex] = pathMetrics.sharpeRatio
       drawdownPerPath[pathIndex] = pathMetrics.maxDrawdown
+      transactionCostsPerPath[pathIndex] = cumulativeTransactionCosts
+      realizedGainLossPerPath[pathIndex] = cumulativeRealizedGainLoss
+      taxesPaidPerPath[pathIndex] = cumulativeTaxesPaid
+      lossCarryforwardPerPath[pathIndex] = taxState.lossCarryforward
 
       if (growthKind === 'cagr') {
         growthPerPath[pathIndex] = computeCagr(
           initialInvestment,
-          equity,
+          terminalWealth[pathIndex],
           horizonYears,
         )
       } else {
         // Complete the schedule: initial outflow at t = 0, terminal value in
         // at t = T (net of the contribution that also happened at T).
         cashFlowScratch[0] = -initialInvestment
-        cashFlowScratch[periods] += equity
+        cashFlowScratch[periods] += terminalWealth[pathIndex]
         growthPerPath[pathIndex] = computeAnnualizedIrr(
           cashFlowScratch,
           periodsPerYear,
@@ -337,7 +546,7 @@ export function runSimulation(
       // (initial investment plus this path's own realized contributions —
       // value averaging makes that total path-dependent).
       const totalPaidIn = initialInvestment + pathMetrics.totalContributions
-      if (equity < totalPaidIn) {
+      if (terminalWealth[pathIndex] < totalPaidIn) {
         lossCount += 1
       }
     }
@@ -348,7 +557,13 @@ export function runSimulation(
       retainedContributions &&
       retainedPriceLevels &&
       retainedScenarios &&
-      retainedTrades
+      retainedTrades &&
+      retainedExecutedTrades &&
+      retainedTransactionCosts &&
+      retainedRealizedGainLosses &&
+      retainedTaxesPaid &&
+      retainedCostBases &&
+      retainedLossCarryforwards
     ) {
       retainedPaths.push({
         pathIndex,
@@ -356,6 +571,12 @@ export function runSimulation(
         contributions: retainedContributions,
         priceLevels: retainedPriceLevels,
         trades: retainedTrades,
+        executedTrades: retainedExecutedTrades,
+        transactionCosts: retainedTransactionCosts,
+        realizedGainLosses: retainedRealizedGainLosses,
+        taxesPaid: retainedTaxesPaid,
+        costBases: retainedCostBases,
+        lossCarryforwards: retainedLossCarryforwards,
         scenarios: retainedScenarios,
       })
     }
@@ -371,10 +592,11 @@ export function runSimulation(
   const metrics: SimulationMetrics = {
     terminalWealth: computeTerminalWealthPercentiles(terminalWealth),
     lossProbability: lossCount / paths,
-    // Ruin = the fraction of failed/insolvent paths. Structurally ~0 until
-    // leverage exists (Phase 5+): unleveraged long-only accounting cannot go
-    // insolvent. Reported anyway so the definition is already in place.
-    ruinProbability: failures.length / paths,
+    // Ruin is future leverage insolvency, not every defensive accounting
+    // failure. A fee/tax execution error is surfaced in failures and counts
+    // as a loss, but it must not masquerade as economic insolvency.
+    ruinProbability:
+      failures.filter((failure) => failure.code === 'insolvent').length / paths,
     growth: {
       kind: growthKind,
       summary: summarizeAcrossPaths(growthPerPath),
@@ -382,6 +604,10 @@ export function runSimulation(
     annualizedVolatility: summarizeAcrossPaths(volatilityPerPath),
     sharpeRatio: summarizeAcrossPaths(sharpePerPath),
     maxDrawdown: summarizeAcrossPaths(drawdownPerPath),
+    transactionCosts: summarizeAcrossPaths(transactionCostsPerPath),
+    realizedGainLoss: summarizeAcrossPaths(realizedGainLossPerPath),
+    taxesPaid: summarizeAcrossPaths(taxesPaidPerPath),
+    lossCarryforward: summarizeAcrossPaths(lossCarryforwardPerPath),
     benchmark:
       benchmarkTerminalWealth === null
         ? null
@@ -406,6 +632,7 @@ export function runSimulation(
           prng: input.prngVersion,
           quantile: QUANTILE_VERSION,
           metrics: METRICS_VERSION,
+          accounting: 'cost-tax-accounting-v1',
         },
       },
       terminalWealth,
@@ -420,6 +647,172 @@ export function runSimulation(
       ),
       retainedPaths,
       failures,
+    },
+  }
+}
+
+type CostedPeriodResult = {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly intendedTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[]
+  readonly executedTrades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+  readonly transactionCosts: number
+  readonly realizedGainLoss: number
+  readonly taxesPaid: number
+}
+
+// This wrapper leaves Phase 1's return/contribution primitive and Phase 6's
+// rebalance decision untouched. It only turns their output into cash-funded
+// trades, so the accounting policy stays in one auditable place.
+function executeCostedPortfolioPeriod({
+  holdings,
+  assetReturns,
+  contribution,
+  weights,
+  rebalancing,
+  periodIndex,
+  transactionCosts,
+  tax,
+  taxState,
+}: {
+  readonly holdings: readonly number[]
+  readonly assetReturns: readonly number[]
+  readonly contribution: number
+  readonly weights: readonly number[]
+  readonly rebalancing: RebalancingConfig | undefined
+  readonly periodIndex: number
+  readonly transactionCosts: TransactionCostConfig | undefined
+  readonly tax: TaxConfig | undefined
+  readonly taxState: ReturnType<typeof initializeTaxState>
+}): ValidationResult<CostedPeriodResult> {
+  const grownHoldings = applyPeriodReturn(holdings, assetReturns)
+  const contributionTrades = createContributionTrades(
+    contribution,
+    weights,
+    transactionCosts,
+  )
+  if (!contributionTrades.ok) return contributionTrades
+
+  const pricedContributionTrades = priceTrades(
+    contributionTrades.value,
+    transactionCosts,
+  )
+  const afterContribution = applyExecutedTrades(
+    grownHoldings,
+    pricedContributionTrades.trades,
+  )
+  if (!afterContribution.ok) return afterContribution
+
+  let nextTaxState = applyTaxableBuys(taxState, pricedContributionTrades.trades)
+  const rebalanced = rebalancePortfolio(
+    afterContribution.value,
+    weights,
+    rebalancing,
+    periodIndex,
+  )
+  const saleIntent = rebalanced.trades.filter((trade) => trade.value < 0)
+  const pricedSales = priceTrades(saleIntent, transactionCosts)
+  const taxSales = applyTaxableSales(
+    nextTaxState,
+    afterContribution.value,
+    pricedSales.trades,
+    tax,
+  )
+  if (!taxSales.ok) return taxSales
+
+  const afterSales = applyExecutedTrades(
+    afterContribution.value,
+    pricedSales.trades,
+  )
+  if (!afterSales.ok) return afterSales
+
+  // Sale proceeds first cover sell fees and tax. Only the residual can pay
+  // rebalance buys and their own fees; this is why friction prevents an exact
+  // target-weight reset without an explicit cash or borrowing model.
+  const availableProceeds =
+    pricedSales.grossSells - pricedSales.sellCosts - taxSales.value.taxPaid
+  const buyIntent = rebalanced.trades.filter((trade) => trade.value > 0)
+  const fundedBuys = fundRebalanceBuys(
+    buyIntent,
+    availableProceeds,
+    transactionCosts,
+  )
+  if (!fundedBuys.ok) return fundedBuys
+
+  const pricedBuys = priceTrades(fundedBuys.value, transactionCosts)
+  const afterBuys = applyExecutedTrades(afterSales.value, pricedBuys.trades)
+  if (!afterBuys.ok) return afterBuys
+
+  nextTaxState = applyTaxableBuys(taxSales.value.state, pricedBuys.trades)
+  return {
+    ok: true,
+    value: {
+      holdings: afterBuys.value,
+      taxState: nextTaxState,
+      intendedTrades: rebalanced.trades,
+      executedTrades: [
+        ...pricedContributionTrades.trades,
+        ...pricedSales.trades,
+        ...pricedBuys.trades,
+      ],
+      transactionCosts:
+        pricedContributionTrades.buyCosts +
+        pricedSales.sellCosts +
+        pricedBuys.buyCosts,
+      realizedGainLoss: taxSales.value.realizedGainLoss,
+      taxesPaid: taxSales.value.taxPaid,
+    },
+  }
+}
+
+function liquidatePortfolio(
+  holdings: readonly number[],
+  taxState: ReturnType<typeof initializeTaxState>,
+  transactionCosts: TransactionCostConfig | undefined,
+  tax: TaxConfig | undefined,
+): ValidationResult<{
+  readonly terminalWealth: number
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly executedTrades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+  readonly transactionCosts: number
+  readonly realizedGainLoss: number
+  readonly taxesPaid: number
+}> {
+  const liquidationIntent = holdings.flatMap((holding, assetIndex) =>
+    holding > 0 ? [{ assetIndex, value: -holding }] : [],
+  )
+  const pricedSales = priceTrades(liquidationIntent, transactionCosts)
+  const taxSales = applyTaxableSales(
+    taxState,
+    holdings,
+    pricedSales.trades,
+    tax,
+  )
+  if (!taxSales.ok) return taxSales
+
+  const terminalWealth =
+    pricedSales.grossSells - pricedSales.sellCosts - taxSales.value.taxPaid
+  if (!Number.isFinite(terminalWealth) || terminalWealth < -1e-10) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'tax.liquidation.invalid',
+          message: 'Final liquidation produced invalid terminal wealth.',
+        },
+      ],
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      terminalWealth: terminalWealth < 0 ? 0 : terminalWealth,
+      taxState: taxSales.value.state,
+      executedTrades: pricedSales.trades,
+      transactionCosts: pricedSales.sellCosts,
+      realizedGainLoss: taxSales.value.realizedGainLoss,
+      taxesPaid: taxSales.value.taxPaid,
     },
   }
 }

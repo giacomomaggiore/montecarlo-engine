@@ -15,7 +15,7 @@ import {
 
 describe('METRICS_VERSION', () => {
   it('is the versioned identifier carried into result metadata', () => {
-    expect(METRICS_VERSION).toBe('metrics-v1')
+    expect(METRICS_VERSION).toBe('metrics-v2')
   })
 })
 

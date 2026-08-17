@@ -190,6 +190,29 @@ describe('deriveRunPlan — success', () => {
       everyPeriods: 52,
     })
   })
+
+  it('converts cost and tax percentages once at the run-plan boundary', () => {
+    const result = deriveRunPlan(
+      validInputs({
+        fixedTransactionCost: '2.50',
+        proportionalTransactionCostPercent: '0.15',
+        capitalGainsTaxPercent: '20',
+        initialCostBasis: '8000',
+      }),
+      CATALOGUE,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.value.config.transactionCosts).toEqual({
+      fixedPerOrder: 2.5,
+      proportionalRate: 0.0015,
+    })
+    expect(result.value.config.tax).toEqual({
+      capitalGainsRate: 0.2,
+      initialCostBasis: 8000,
+    })
+  })
 })
 
 describe('deriveRunPlan — field-addressable failures', () => {
@@ -240,6 +263,25 @@ describe('deriveRunPlan — field-addressable failures', () => {
     expectSingleErrorCode(validInputs({ paths: '19231' }), 'inputs.paths')
     const atCeiling = deriveRunPlan(validInputs({ paths: '19230' }), CATALOGUE)
     expect(atCeiling.ok).toBe(true)
+  })
+
+  it('addresses invalid cost, tax, and nonnumeric basis fields directly', () => {
+    expectSingleErrorCode(
+      validInputs({ fixedTransactionCost: '-1' }),
+      'inputs.transactionCosts.fixedPerOrder',
+    )
+    expectSingleErrorCode(
+      validInputs({ proportionalTransactionCostPercent: '-0.01' }),
+      'inputs.transactionCosts.proportionalRate',
+    )
+    expectSingleErrorCode(
+      validInputs({ capitalGainsTaxPercent: '101' }),
+      'inputs.tax.capitalGainsRate',
+    )
+    expectSingleErrorCode(
+      validInputs({ initialCostBasis: 'not-a-number' }),
+      'inputs.tax.initialCostBasis',
+    )
   })
 
   it('rejects a selection whose estimated common history is too short', () => {

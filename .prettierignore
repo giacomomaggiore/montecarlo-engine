@@ -5,4 +5,5 @@ data/
 dist/
 node_modules/
 .agents/
+.venv/
 test-results/

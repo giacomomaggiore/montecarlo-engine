@@ -14,6 +14,12 @@ function createResult(retainedPathCount: number): SimulationResult {
     contributions: new Float64Array([0, 1, 1]),
     priceLevels: new Float64Array([1, 1.001, 1.002]),
     trades: [[], [], []],
+    executedTrades: [[], [], []],
+    transactionCosts: new Float64Array([0, 0, 0]),
+    realizedGainLosses: new Float64Array([0, 0, 0]),
+    taxesPaid: new Float64Array([0, 0, 0]),
+    costBases: new Float64Array([1000, 1000, 1000]),
+    lossCarryforwards: new Float64Array([0, 0, 0]),
     scenarios: [],
   }))
   const representativePaths = REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(
@@ -61,6 +67,10 @@ function createResult(retainedPathCount: number): SimulationResult {
       annualizedVolatility: null,
       sharpeRatio: null,
       maxDrawdown: null,
+      transactionCosts: null,
+      realizedGainLoss: null,
+      taxesPaid: null,
+      lossCarryforward: null,
       benchmark: null,
     },
     representativePaths,
@@ -105,9 +115,9 @@ describe('buildTransferList', () => {
     const transferList = buildTransferList(result)
 
     // 1 terminal-wealth buffer, 2 per representative path (values +
-    // priceLevels), 3 per retained path (values + contributions +
-    // priceLevels).
-    expect(transferList).toHaveLength(1 + 7 * 2 + 2 * 3)
+    // priceLevels), 8 per retained path (values, contributions, price level,
+    // and five bounded Phase 7 audit series).
+    expect(transferList).toHaveLength(1 + 7 * 2 + 2 * 8)
     expect(transferList).toContain(result.terminalWealth.buffer)
     expect(transferList).toContain(result.representativePaths[0].values.buffer)
     expect(transferList).toContain(

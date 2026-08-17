@@ -62,6 +62,15 @@ function fixtureResult(): SimulationResult {
       },
       sharpeRatio: null,
       maxDrawdown: { p10: 0.02, p50: 0.05, p90: 0.09, availablePathCount: 2 },
+      transactionCosts: { p10: 1, p50: 2, p90: 3, availablePathCount: 2 },
+      realizedGainLoss: { p10: -1, p50: 1, p90: 3, availablePathCount: 2 },
+      taxesPaid: { p10: 0, p50: 1, p90: 2, availablePathCount: 2 },
+      lossCarryforward: {
+        p10: 0,
+        p50: 1,
+        p90: 2,
+        availablePathCount: 2,
+      },
       benchmark: null,
     },
     representativePaths: [
@@ -82,6 +91,12 @@ function fixtureResult(): SimulationResult {
         contributions: new Float64Array([0, 0, 0]),
         priceLevels: new Float64Array([1, 1.1, 1.21]),
         trades: [[], [], []],
+        executedTrades: [[], [], []],
+        transactionCosts: new Float64Array([0, 1, 2]),
+        realizedGainLosses: new Float64Array([0, 3, 4]),
+        taxesPaid: new Float64Array([0, 1, 1]),
+        costBases: new Float64Array([1000, 1050, 1100]),
+        lossCarryforwards: new Float64Array([0, 0, 0]),
         scenarios: [
           {
             assetReturns: [0.1],
@@ -139,6 +154,8 @@ describe('ResultsPanel', () => {
     expect(
       screen.getByText(/structurally zero until leverage exists/),
     ).toBeInTheDocument()
+    expect(screen.getByText('Cumulative transaction costs')).toBeInTheDocument()
+    expect(screen.getByText('Capital-gains tax paid')).toBeInTheDocument()
   })
 
   it('shows nominal terminal values by default and per-path deflated values in real mode', () => {
@@ -170,6 +187,8 @@ describe('ResultsPanel', () => {
     // from row 2 = 2020-01-19. Period 0 has no sampled week.
     expect(within(table).getByText('2020-01-12')).toBeInTheDocument()
     expect(within(table).getByText('2020-01-19')).toBeInTheDocument()
-    expect(within(table).getByText('$1,100')).toBeInTheDocument()
+    expect(within(table).getAllByText('$1,100').length).toBeGreaterThan(0)
+    expect(within(table).getByText('Executed orders')).toBeInTheDocument()
+    expect(within(table).getByText('Loss carryforward')).toBeInTheDocument()
   })
 })

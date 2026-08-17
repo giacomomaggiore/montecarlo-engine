@@ -32,14 +32,18 @@ function formatPercentile(level: number): string {
   return `p${Math.round(level * 100)}`
 }
 
-function formatTrades(
-  trades: readonly { readonly assetIndex: number; readonly value: number }[],
+function formatExecutedTrades(
+  trades: readonly {
+    readonly assetIndex: number
+    readonly value: number
+    readonly transactionCost: number
+  }[],
 ): string {
   if (trades.length === 0) return 'none'
   return trades
     .map(
       (trade) =>
-        `Asset ${trade.assetIndex + 1} ${trade.value > 0 ? 'buy' : 'sell'} ${currency.format(Math.abs(trade.value))}`,
+        `Asset ${trade.assetIndex + 1} ${trade.value > 0 ? 'buy' : 'sell'} ${currency.format(Math.abs(trade.value))}; fee ${currency.format(trade.transactionCost)}`,
     )
     .join('; ')
 }
@@ -108,7 +112,7 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
         <p role="alert">Terminal wealth: N/A — every simulated path failed.</p>
       ) : (
         <table className="metrics-table">
-          <caption>Terminal wealth after the full horizon (nominal)</caption>
+          <caption>Terminal wealth after final liquidation (nominal)</caption>
           <thead>
             <tr>
               {(['p10', 'p25', 'p50', 'p75', 'p90'] as const).map((level) => (
@@ -170,6 +174,34 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
             summary={metrics.maxDrawdown}
             totalPaths={totalPaths}
             unavailableReason="no path completed enough periods"
+          />
+          <MetricRow
+            format={(value) => currency.format(value)}
+            label="Cumulative transaction costs"
+            summary={metrics.transactionCosts}
+            totalPaths={totalPaths}
+            unavailableReason="no path completed accounting"
+          />
+          <MetricRow
+            format={(value) => currency.format(value)}
+            label="Realised gain / loss"
+            summary={metrics.realizedGainLoss}
+            totalPaths={totalPaths}
+            unavailableReason="no path completed accounting"
+          />
+          <MetricRow
+            format={(value) => currency.format(value)}
+            label="Capital-gains tax paid"
+            summary={metrics.taxesPaid}
+            totalPaths={totalPaths}
+            unavailableReason="no path completed accounting"
+          />
+          <MetricRow
+            format={(value) => currency.format(value)}
+            label="Unused loss carryforward"
+            summary={metrics.lossCarryforward}
+            totalPaths={totalPaths}
+            unavailableReason="no path completed accounting"
           />
         </tbody>
       </table>
@@ -310,7 +342,12 @@ function PathInspector({
                 <th scope="col">Equity</th>
                 {displayMode === 'real' && <th scope="col">Real equity</th>}
                 <th scope="col">Contribution</th>
-                <th scope="col">Trades</th>
+                <th scope="col">Executed orders</th>
+                <th scope="col">Costs</th>
+                <th scope="col">Gain / loss</th>
+                <th scope="col">Tax</th>
+                <th scope="col">Basis</th>
+                <th scope="col">Loss carryforward</th>
                 <th scope="col">Price level</th>
               </tr>
             </thead>
@@ -348,7 +385,42 @@ function PathInspector({
                         ? currency.format(selected.contributions[periodIndex])
                         : '—'}
                     </td>
-                    <td>{formatTrades(selected.trades[periodIndex] ?? [])}</td>
+                    <td>
+                      {formatExecutedTrades(
+                        selected.executedTrades[periodIndex] ?? [],
+                      )}
+                    </td>
+                    <td>
+                      {Number.isFinite(selected.transactionCosts[periodIndex])
+                        ? currency.format(
+                            selected.transactionCosts[periodIndex],
+                          )
+                        : '—'}
+                    </td>
+                    <td>
+                      {Number.isFinite(selected.realizedGainLosses[periodIndex])
+                        ? currency.format(
+                            selected.realizedGainLosses[periodIndex],
+                          )
+                        : '—'}
+                    </td>
+                    <td>
+                      {Number.isFinite(selected.taxesPaid[periodIndex])
+                        ? currency.format(selected.taxesPaid[periodIndex])
+                        : '—'}
+                    </td>
+                    <td>
+                      {Number.isFinite(selected.costBases[periodIndex])
+                        ? currency.format(selected.costBases[periodIndex])
+                        : '—'}
+                    </td>
+                    <td>
+                      {Number.isFinite(selected.lossCarryforwards[periodIndex])
+                        ? currency.format(
+                            selected.lossCarryforwards[periodIndex],
+                          )
+                        : '—'}
+                    </td>
                     <td>
                       {Number.isFinite(priceLevel)
                         ? priceLevel.toFixed(4)
@@ -388,8 +460,12 @@ export function ResultsPanel({
         {config.paths.toLocaleString('en-US')} paths x {config.periods} periods
         (~{Math.round(config.periods / periodsPerYear)} years), dataset{' '}
         {result.metadata.dataset.version}, rebalancing{' '}
-        {config.rebalancing?.mode ?? 'none'}. Edits made to the settings above
-        do not apply until the next run.
+        {config.rebalancing?.mode ?? 'none'}, fixed order cost{' '}
+        {currency.format(config.transactionCosts?.fixedPerOrder ?? 0)},
+        proportional cost{' '}
+        {percent.format(config.transactionCosts?.proportionalRate ?? 0)}, tax{' '}
+        {percent.format(config.tax?.capitalGainsRate ?? 0)}. Edits made to the
+        settings above do not apply until the next run.
       </p>
 
       {result.failures.length > 0 && (

@@ -41,8 +41,29 @@ test('runs Bootstrap against the released browser artifacts and renders results'
     page.getByText(/Completed run: historical-bootstrap-v1/),
   ).toBeVisible()
   await expect(
-    page.getByRole('table', { name: /Terminal wealth after the full horizon/ }),
+    page.getByRole('table', {
+      name: /Terminal wealth after final liquidation/,
+    }),
   ).toBeVisible()
+})
+
+test('runs DCA with transaction costs and capital-gains tax', async ({
+  page,
+}) => {
+  await configureSmallBootstrapRun(page)
+  await page.getByLabel('DCA (fixed contribution each period)').check()
+  await page
+    .getByLabel('Contribution per period (USD, end of period)')
+    .fill('100')
+  await page.getByLabel('Fixed cost per executed order (USD)').fill('1')
+  await page.getByLabel('Proportional transaction cost (%)').fill('0.1')
+  await page.getByLabel('Capital-gains tax rate (%)').fill('20')
+
+  await page.getByRole('button', { name: 'Run' }).click()
+  await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible()
+  await expect(page.getByText('Cumulative transaction costs')).toBeVisible()
+  await expect(page.getByText('Capital-gains tax paid')).toBeVisible()
+  await expect(page.getByText(/fixed order cost \$1.*tax 20.0%/)).toBeVisible()
 })
 
 test('cancels a still-running large simulation', async ({ page }) => {

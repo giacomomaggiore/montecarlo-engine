@@ -22,7 +22,7 @@ import { computeQuantile } from '../math/quantiles'
 // Versioned per the Financial Rules: metric definitions are part of a
 // result's reproducible identity, exactly like the PRNG and model versions.
 // Any change to a formula below requires bumping this string.
-export const METRICS_VERSION = 'metrics-v1'
+export const METRICS_VERSION = 'metrics-v2'
 
 // Cross-sectional summary of one per-path metric. availablePathCount says how
 // many paths actually produced a defined value — the honest denominator.
@@ -50,10 +50,9 @@ export type SimulationMetrics = {
   // P(W_T < total contributed capital), counting failed paths as losses:
   // a path that could not even finish certainly did not beat its own inflows.
   readonly lossProbability: number
-  // Fraction of failed/insolvent paths. Structurally ~0 until leverage exists
-  // (Phase 5+): unleveraged long-only accounting cannot go insolvent, only a
-  // defective engine can produce non-finite equity. Reported anyway so the
-  // metric's meaning is already established when leverage arrives.
+  // Fraction of paths explicitly marked insolvent by leverage accounting.
+  // Transaction-cost/tax execution failures remain visible in `failures` but
+  // are not economic ruin. Structurally zero until Phase 8 adds leverage.
   readonly ruinProbability: number
   // CAGR for lump sum (no later external flows), money-weighted IRR when
   // recurring contributions exist — per the Key Metrics Panel rule that a
@@ -66,6 +65,10 @@ export type SimulationMetrics = {
   readonly annualizedVolatility: MetricSummary | null
   readonly sharpeRatio: MetricSummary | null
   readonly maxDrawdown: MetricSummary | null
+  readonly transactionCosts: MetricSummary | null
+  readonly realizedGainLoss: MetricSummary | null
+  readonly taxesPaid: MetricSummary | null
+  readonly lossCarryforward: MetricSummary | null
   readonly benchmark: BenchmarkMetrics | null
 }
 

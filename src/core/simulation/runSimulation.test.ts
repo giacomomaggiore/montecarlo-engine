@@ -86,7 +86,8 @@ describe('runSimulation', () => {
       model: 'historical-bootstrap-v1',
       prng: 'xoshiro128**-v1',
       quantile: 'quantile-linear-interpolation-v1',
-      metrics: 'metrics-v1',
+      metrics: 'metrics-v2',
+      accounting: 'cost-tax-accounting-v1',
     })
     // The result must carry the aligned date axis so the UI can map a
     // bootstrap sourceRowIndex back to a real historical week.
@@ -421,5 +422,112 @@ describe('runSimulation', () => {
         { assetIndex: 1, value: 200 },
       ],
     ])
+  })
+
+  it('preserves Phase 6 outcomes when explicit cost and tax settings are zero', () => {
+    const dataset = createDataset()
+    const baseConfig = createConfig({
+      paths: 3,
+      periods: 2,
+      cashFlow: { mode: 'dca', amount: 100 },
+      rebalancing: { mode: 'time', everyPeriods: 1 },
+    })
+    const prior = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 12),
+      dataset,
+      config: baseConfig,
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+    const explicitZero = runSimulation({
+      engine: createHistoricalBootstrapEngine(dataset, 12),
+      dataset,
+      config: {
+        ...baseConfig,
+        transactionCosts: { fixedPerOrder: 0, proportionalRate: 0 },
+        tax: { capitalGainsRate: 0, initialCostBasis: null },
+      },
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+    if (!prior.ok || !explicitZero.ok) {
+      throw new Error('expected successful runs')
+    }
+
+    expect(Array.from(explicitZero.value.terminalWealth)).toEqual(
+      Array.from(prior.value.terminalWealth),
+    )
+    expect(Array.from(explicitZero.value.retainedPaths[0].values)).toEqual(
+      Array.from(prior.value.retainedPaths[0].values),
+    )
+  })
+
+  it('keeps gross DCA cash flows for the benchmark while portfolio fees reduce wealth', () => {
+    const dataset = createDataset()
+    const engine: SimulationEngine = {
+      nextScenario: () => ({
+        assetReturns: [0, 0],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 0,
+      }),
+    }
+    const result = runSimulation({
+      engine,
+      dataset,
+      config: createConfig({
+        weights: [1],
+        paths: 1,
+        periods: 1,
+        cashFlow: { mode: 'dca', amount: 105 },
+        transactionCosts: { fixedPerOrder: 2, proportionalRate: 0.01 },
+        tax: { capitalGainsRate: 0, initialCostBasis: null },
+      }),
+      selection: { portfolioAssetIndices: [0], benchmarkAssetIndex: 1 },
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+    if (!result.ok) throw new Error('expected successful run')
+
+    // The benchmark receives the investor's full $105 cash flow. The $1,000
+    // portfolio pays $3.0198 to buy and $13.0198 at final liquidation.
+    expect(result.value.benchmarkTerminalWealth?.[0]).toBeCloseTo(1105)
+    expect(result.value.terminalWealth[0]).toBeCloseTo(1088.9603960396)
+    expect(result.value.metrics.transactionCosts?.p50).toBeCloseTo(
+      16.0396039604,
+    )
+    expect(result.value.retainedPaths[0].contributions[1]).toBe(105)
+  })
+
+  it('deducts final liquidation tax from terminal wealth after sale proceeds', () => {
+    const dataset = createDataset()
+    const engine: SimulationEngine = {
+      nextScenario: () => ({
+        assetReturns: [0.2, 0],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: 0,
+      }),
+    }
+    const result = runSimulation({
+      engine,
+      dataset,
+      config: createConfig({
+        weights: [1],
+        paths: 1,
+        periods: 1,
+        tax: { capitalGainsRate: 0.2, initialCostBasis: null },
+      }),
+      selection: { portfolioAssetIndices: [0], benchmarkAssetIndex: null },
+      modelVersion: 'test-model',
+      prngVersion: 'test-prng',
+    })
+    if (!result.ok) throw new Error('expected successful run')
+
+    // $1,000 basis grows to $1,200. Final sale realizes $200, owes $40 tax,
+    // and leaves the investor with $1,160 after liquidation.
+    expect(result.value.terminalWealth[0]).toBeCloseTo(1160)
+    expect(result.value.metrics.taxesPaid?.p50).toBeCloseTo(40)
+    expect(result.value.metrics.realizedGainLoss?.p50).toBeCloseTo(200)
   })
 })

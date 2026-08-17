@@ -73,6 +73,10 @@ export type SimulatorInputs = {
   readonly rebalancingMode: RebalancingMode
   readonly rebalancingEveryPeriods: string
   readonly rebalancingBandPercentagePoints: string
+  readonly fixedTransactionCost: string
+  readonly proportionalTransactionCostPercent: string
+  readonly capitalGainsTaxPercent: string
+  readonly initialCostBasis: string
   readonly parametric: ParametricInputs
   // Display-only toggle (never sent to the Worker): nominal accounting
   // values versus per-path inflation-deflated real values.
@@ -95,6 +99,10 @@ export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   rebalancingMode: 'none',
   rebalancingEveryPeriods: '52',
   rebalancingBandPercentagePoints: '5',
+  fixedTransactionCost: '0',
+  proportionalTransactionCostPercent: '0',
+  capitalGainsTaxPercent: '0',
+  initialCostBasis: '',
   parametric: {
     returnMode: 'historical',
     nuMode: 'automatic',
@@ -115,6 +123,10 @@ export type ScalarInputField =
   | 'vaTargetIncrease'
   | 'rebalancingEveryPeriods'
   | 'rebalancingBandPercentagePoints'
+  | 'fixedTransactionCost'
+  | 'proportionalTransactionCostPercent'
+  | 'capitalGainsTaxPercent'
+  | 'initialCostBasis'
 
 export type ParametricScalarField =
   'manualNu' | 'annualInflationPercent' | 'annualRiskFreePercent'
@@ -514,6 +526,60 @@ export function deriveRunPlan(
     }
   }
 
+  const fixedTransactionCost = parseFiniteNumber(inputs.fixedTransactionCost)
+  if (fixedTransactionCost === null || fixedTransactionCost < 0) {
+    errors.push(
+      inputError(
+        'inputs.transactionCosts.fixedPerOrder',
+        'Fixed transaction cost must be a non-negative amount.',
+      ),
+    )
+  }
+  const proportionalTransactionCostPercent = parseFiniteNumber(
+    inputs.proportionalTransactionCostPercent,
+  )
+  if (
+    proportionalTransactionCostPercent === null ||
+    proportionalTransactionCostPercent < 0
+  ) {
+    errors.push(
+      inputError(
+        'inputs.transactionCosts.proportionalRate',
+        'Proportional transaction cost must be a non-negative percentage.',
+      ),
+    )
+  }
+  const capitalGainsTaxPercent = parseFiniteNumber(
+    inputs.capitalGainsTaxPercent,
+  )
+  if (
+    capitalGainsTaxPercent === null ||
+    capitalGainsTaxPercent < 0 ||
+    capitalGainsTaxPercent > 100
+  ) {
+    errors.push(
+      inputError(
+        'inputs.tax.capitalGainsRate',
+        'Capital-gains tax must be between 0% and 100%.',
+      ),
+    )
+  }
+  const hasInitialCostBasis = inputs.initialCostBasis.trim() !== ''
+  const parsedInitialCostBasis = hasInitialCostBasis
+    ? parseFiniteNumber(inputs.initialCostBasis)
+    : null
+  if (
+    (hasInitialCostBasis && parsedInitialCostBasis === null) ||
+    (parsedInitialCostBasis !== null && parsedInitialCostBasis < 0)
+  ) {
+    errors.push(
+      inputError(
+        'inputs.tax.initialCostBasis',
+        'Initial cost basis must be blank or a non-negative amount.',
+      ),
+    )
+  }
+
   // --- Parametric options (only when that engine is selected) -------------
   let engineSelection: EngineSelection | null = null
   if (inputs.engine === 'bootstrap') {
@@ -607,6 +673,14 @@ export function deriveRunPlan(
     initialInvestment: initialInvestment as number,
     cashFlow: cashFlow as CashFlowConfig,
     rebalancing: rebalancing as RebalancingConfig,
+    transactionCosts: {
+      fixedPerOrder: fixedTransactionCost as number,
+      proportionalRate: (proportionalTransactionCostPercent as number) / 100,
+    },
+    tax: {
+      capitalGainsRate: (capitalGainsTaxPercent as number) / 100,
+      initialCostBasis: parsedInitialCostBasis,
+    },
     paths: paths as number,
     periods: periods as number,
     seed: seed as number,

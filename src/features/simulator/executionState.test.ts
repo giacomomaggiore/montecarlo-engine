@@ -39,6 +39,10 @@ function fakeResult(): SimulationResult {
       annualizedVolatility: null,
       sharpeRatio: null,
       maxDrawdown: null,
+      transactionCosts: null,
+      realizedGainLoss: null,
+      taxesPaid: null,
+      lossCarryforward: null,
       benchmark: null,
     },
     representativePaths: REPRESENTATIVE_PATH_QUANTILE_LEVELS.map(

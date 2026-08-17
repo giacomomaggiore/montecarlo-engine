@@ -904,3 +904,41 @@ Phase 5: benchmark comparison. It should be implemented as a separate one-ETF bu
 ### Next step
 
 Phase 7: transaction costs, then taxes. It can consume Phase 6's retained canonical trade lists directly, applying order costs before realized gains and preserving the existing benchmark as a frictionless comparison.
+
+## 2026-08-17 - Phase 7: transaction costs and taxes
+
+### Scope completed
+
+- Added fixed and proportional transaction costs, capital-gains tax, and an optional initial aggregate cost-basis override to the validated simulation configuration and accessible portfolio-settings form.
+- Added a pure, cost-funded execution ledger. Gross DCA/value-averaging contributions remain the investor cash flow, but are split between target-weight purchases and their executed-order costs. Rebalancing sells execute first; their net proceeds after sell costs and immediate tax fund a scaled buy leg, with no implicit cash account or borrowing.
+- Added per-asset average dollar basis, path-level loss carryforward, immediate tax on net sale gains, and final portfolio liquidation. Buy costs increase basis; sell costs reduce proceeds before gain calculation; later gains use accumulated losses but no refund is generated.
+- Kept the optional benchmark frictionless and fed it the same gross external contribution as before. Cost/tax execution failures remain explicit accounting failures and losses, but ruin probability remains reserved for future leverage insolvency.
+- Added bounded retained-path audit data (executed orders, costs, realised gain/loss, tax, remaining basis, and carryforward) plus cross-sectional cost/tax summaries. Terminal wealth is now explicitly labelled after final liquidation.
+
+### Files added
+
+- `src/core/portfolio/transactionCosts.ts` / `.test.ts`: pure order pricing, contribution funding, sale-funded rebalance buys, and holding validation.
+- `src/core/portfolio/taxes.ts` / `.test.ts`: average-basis state, buy basis increments, taxable sales, loss carryforward, and immediate tax.
+- `src/core/simulation/costTaxIndependentCheck.test.ts`: TypeScript replay of the independent Phase 7 trace.
+- `validation/phase_7_independent_check.py`: procedural Python reimplementation of two costed, rebalanced periods and final liquidation.
+
+### Accounting conventions
+
+- Initial investment remains a period-zero allocation without a Phase 7 order cost; its default basis is the initial investment, or the user's explicit override, split at target weights.
+- With a gross contribution $C$, $n$ nonzero purchase orders, fixed fee $f$, and proportional rate $p$, purchasable gross value is $B=(C-nf)/(1+p)$. The benchmark and IRR still use $C$, not $B$.
+- Final liquidation sells every remaining holding once, deducts sell costs and immediate tax, and produces the portfolio terminal wealth. The benchmark stays unliquidated and frictionless by its Phase 5 contract.
+- `metrics-v2` and `cost-tax-accounting-v1` identify the expanded result rules. Explicit zero costs/tax keep the pre-Phase-7 path values and terminal outcomes unchanged.
+
+### Validation completed
+
+- Complete Vitest suite: **31 files, 261 tests passed**.
+- Playwright: **4 browser smoke tests passed**.
+- `npm run lint`, `npm run format`, and `npm run build` passed.
+- Pure transaction-cost and tax tests cover contribution funding, order omission, infeasibility, basis updates, partial sales, sell-cost proceeds, cross-asset carryforward, and invalid sales.
+- Runner tests cover zero-friction identity, gross benchmark cash-flow identity, final-liquidation costs, final tax, and retained audit data.
+- The independent Python trace is asserted period by period in TypeScript: first-period taxable gain and tax, second-period carryforward, and final liquidation all agree.
+- Playwright includes a released-data DCA smoke run with nonzero fixed/proportional costs and tax settings.
+
+### Next step
+
+Phase 8: leverage and margin calls. It can reuse Phase 7's sale execution and tax machinery for forced deleveraging, while adding debt, borrowing interest, maintenance-margin checks, insolvency, and the leverage-ratio chart.

@@ -8,11 +8,8 @@ import type {
 } from './simulatorState'
 import { FieldErrors } from './FieldErrors'
 
-// Right-column lower block: money in (initial investment + cash-flow mode)
-// and the nominal/real display toggle. Deliberately NOT here yet: tax, cost,
-// rebalancing, and leverage controls — their accounting does not exist until
-// Phase 5+, and a control that silently does nothing is the UI form of the
-// silent clipping the Financial Rules forbid.
+// Right-column lower block: money in, rebalancing, cost/tax accounting, and
+// the nominal/real display toggle. Every control maps to a validated core rule.
 
 const CASH_FLOW_LABELS: Record<CashFlowMode, string> = {
   lumpSum: 'Lump sum (no later contributions)',
@@ -45,6 +42,19 @@ export function PortfolioSettings({
   const rebalanceBandErrors = errorsForCode(
     errors,
     'inputs.rebalancing.percentagePoints',
+  )
+  const fixedCostErrors = errorsForCode(
+    errors,
+    'inputs.transactionCosts.fixedPerOrder',
+  )
+  const proportionalCostErrors = errorsForCode(
+    errors,
+    'inputs.transactionCosts.proportionalRate',
+  )
+  const taxRateErrors = errorsForCode(errors, 'inputs.tax.capitalGainsRate')
+  const initialBasisErrors = errorsForCode(
+    errors,
+    'inputs.tax.initialCostBasis',
   )
 
   return (
@@ -213,6 +223,117 @@ export function PortfolioSettings({
           />
         </div>
       )}
+
+      <fieldset className="radio-group">
+        <legend>Transaction costs and taxes</legend>
+        <div className="labelled-field">
+          <label htmlFor="field-fixedTransactionCost">
+            Fixed cost per executed order (USD)
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'fixedTransactionCost-errors',
+              fixedCostErrors,
+            )}
+            aria-invalid={fixedCostErrors.length > 0}
+            id="field-fixedTransactionCost"
+            inputMode="decimal"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'fixedTransactionCost',
+                value: event.target.value,
+              })
+            }
+            value={inputs.fixedTransactionCost}
+          />
+          <FieldErrors
+            errors={fixedCostErrors}
+            id="fixedTransactionCost-errors"
+          />
+        </div>
+
+        <div className="labelled-field">
+          <label htmlFor="field-proportionalTransactionCostPercent">
+            Proportional transaction cost (%)
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'proportionalTransactionCostPercent-errors',
+              proportionalCostErrors,
+            )}
+            aria-invalid={proportionalCostErrors.length > 0}
+            id="field-proportionalTransactionCostPercent"
+            inputMode="decimal"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'proportionalTransactionCostPercent',
+                value: event.target.value,
+              })
+            }
+            value={inputs.proportionalTransactionCostPercent}
+          />
+          <FieldErrors
+            errors={proportionalCostErrors}
+            id="proportionalTransactionCostPercent-errors"
+          />
+        </div>
+
+        <div className="labelled-field">
+          <label htmlFor="field-capitalGainsTaxPercent">
+            Capital-gains tax rate (%)
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'capitalGainsTaxPercent-errors',
+              taxRateErrors,
+            )}
+            aria-invalid={taxRateErrors.length > 0}
+            id="field-capitalGainsTaxPercent"
+            inputMode="decimal"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'capitalGainsTaxPercent',
+                value: event.target.value,
+              })
+            }
+            value={inputs.capitalGainsTaxPercent}
+          />
+          <FieldErrors
+            errors={taxRateErrors}
+            id="capitalGainsTaxPercent-errors"
+          />
+        </div>
+
+        <div className="labelled-field">
+          <label htmlFor="field-initialCostBasis">
+            Initial cost basis override (USD, optional)
+          </label>
+          <input
+            aria-describedby={describedBy(
+              'initialCostBasis-errors',
+              initialBasisErrors,
+            )}
+            aria-invalid={initialBasisErrors.length > 0}
+            id="field-initialCostBasis"
+            inputMode="decimal"
+            onChange={(event) =>
+              dispatch({
+                type: 'set-field',
+                field: 'initialCostBasis',
+                value: event.target.value,
+              })
+            }
+            value={inputs.initialCostBasis}
+          />
+          <FieldErrors
+            errors={initialBasisErrors}
+            id="initialCostBasis-errors"
+          />
+        </div>
+      </fieldset>
 
       <fieldset className="radio-group">
         <legend>Value display</legend>

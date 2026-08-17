@@ -92,6 +92,11 @@ export function buildTransferList(result: SimulationResult): ArrayBuffer[] {
       path.values.buffer,
       path.contributions.buffer,
       path.priceLevels.buffer,
+      path.transactionCosts.buffer,
+      path.realizedGainLosses.buffer,
+      path.taxesPaid.buffer,
+      path.costBases.buffer,
+      path.lossCarryforwards.buffer,
     )
   }
 

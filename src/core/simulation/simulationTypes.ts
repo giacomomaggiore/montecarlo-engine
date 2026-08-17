@@ -1,6 +1,7 @@
 import type { DatasetIdentity, Frequency } from '../data/datasetTypes'
 import type { SimulationMetrics } from '../portfolio/metrics'
 import type { PortfolioTrade } from '../portfolio/rebalancing'
+import type { ExecutedPortfolioTrade } from '../portfolio/transactionCosts'
 import type { ValidationError, ValidationResult } from '../validation'
 
 export const MAX_ASSET_COUNT = 6
@@ -27,11 +28,23 @@ export type RebalancingConfig =
   | { readonly mode: 'time'; readonly everyPeriods: number }
   | { readonly mode: 'toleranceBand'; readonly percentagePoints: number }
 
+export type TransactionCostConfig = {
+  readonly fixedPerOrder: number
+  readonly proportionalRate: number
+}
+
+export type TaxConfig = {
+  readonly capitalGainsRate: number
+  readonly initialCostBasis: number | null
+}
+
 export type SimulationConfig = {
   readonly weights: readonly number[]
   readonly initialInvestment: number
   readonly cashFlow: CashFlowConfig
   readonly rebalancing?: RebalancingConfig
+  readonly transactionCosts?: TransactionCostConfig
+  readonly tax?: TaxConfig
   readonly paths: number
   readonly periods: number
   readonly seed: number
@@ -65,6 +78,7 @@ export type AlgorithmVersions = {
   // produced result.metrics -- versioned like every other rule, per the
   // Financial Rules' "include the algorithm versions in every result".
   readonly metrics: string
+  readonly accounting?: string
 }
 
 export type SimulationRunMetadata = {
@@ -96,6 +110,15 @@ export type RetainedPath = {
   // Period 0 is always empty. Later entries preserve the canonical orders
   // that Phase 7 will price and tax; they are never inferred from balances.
   readonly trades: readonly (readonly PortfolioTrade[])[]
+  // Friction changes Phase 6's intent into an executed order ledger. The
+  // original intent remains above for auditability; this is the actual order
+  // that changed holdings and incurred the adjacent transaction cost.
+  readonly executedTrades: readonly (readonly ExecutedPortfolioTrade[])[]
+  readonly transactionCosts: Float64Array
+  readonly realizedGainLosses: Float64Array
+  readonly taxesPaid: Float64Array
+  readonly costBases: Float64Array
+  readonly lossCarryforwards: Float64Array
   readonly scenarios: readonly PeriodScenario[]
 }
 
@@ -220,6 +243,8 @@ export function validateSimulationConfig(
   validateCashFlow(config.cashFlow, errors)
   validatePathsAndPeriods(config.paths, config.periods, frequency, errors)
   validateRebalancing(config.rebalancing, config.periods, errors)
+  validateTransactionCosts(config.transactionCosts, errors)
+  validateTax(config.tax, errors)
 
   if (!isUint32(config.seed)) {
     errors.push(
@@ -263,6 +288,63 @@ function validateRebalancing(
       error(
         'config.rebalancing.percentagePoints',
         'Tolerance band must be greater than 0 and no more than 100 percentage points.',
+      ),
+    )
+  }
+}
+
+function validateTransactionCosts(
+  transactionCosts: TransactionCostConfig | undefined,
+  errors: ValidationError[],
+): void {
+  if (transactionCosts === undefined) return
+
+  if (!isFiniteNonNegative(transactionCosts.fixedPerOrder)) {
+    errors.push(
+      error(
+        'config.transactionCosts.fixedPerOrder',
+        'Fixed transaction cost must be finite and non-negative.',
+      ),
+    )
+  }
+
+  if (!isFiniteNonNegative(transactionCosts.proportionalRate)) {
+    errors.push(
+      error(
+        'config.transactionCosts.proportionalRate',
+        'Proportional transaction cost must be finite and non-negative.',
+      ),
+    )
+  }
+}
+
+function validateTax(
+  tax: TaxConfig | undefined,
+  errors: ValidationError[],
+): void {
+  if (tax === undefined) return
+
+  if (
+    !Number.isFinite(tax.capitalGainsRate) ||
+    tax.capitalGainsRate < 0 ||
+    tax.capitalGainsRate > 1
+  ) {
+    errors.push(
+      error(
+        'config.tax.capitalGainsRate',
+        'Capital-gains tax rate must be finite and between 0% and 100%.',
+      ),
+    )
+  }
+
+  if (
+    tax.initialCostBasis !== null &&
+    !isFiniteNonNegative(tax.initialCostBasis)
+  ) {
+    errors.push(
+      error(
+        'config.tax.initialCostBasis',
+        'Initial cost basis must be blank or a finite non-negative amount.',
       ),
     )
   }

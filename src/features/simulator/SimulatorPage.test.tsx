@@ -116,6 +116,8 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
       initialInvestment: 10_000,
       cashFlow: { mode: 'lumpSum' },
       rebalancing: { mode: 'none' },
+      transactionCosts: { fixedPerOrder: 0, proportionalRate: 0 },
+      tax: { capitalGainsRate: 0, initialCostBasis: null },
       paths: 2000,
       periods: 520,
       seed: 42,
