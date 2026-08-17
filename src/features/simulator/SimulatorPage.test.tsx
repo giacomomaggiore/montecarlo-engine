@@ -118,6 +118,7 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
       rebalancing: { mode: 'none' },
       transactionCosts: { fixedPerOrder: 0, proportionalRate: 0 },
       tax: { capitalGainsRate: 0, initialCostBasis: null },
+      leverage: { mode: 'none' },
       paths: 2000,
       periods: 520,
       seed: 42,

@@ -28,6 +28,21 @@ export type RebalancingConfig =
   | { readonly mode: 'time'; readonly everyPeriods: number }
   | { readonly mode: 'toleranceBand'; readonly percentagePoints: number }
 
+export type LeverageResetConfig =
+  | { readonly mode: 'none' }
+  | { readonly mode: 'time'; readonly everyPeriods: number }
+  | { readonly mode: 'toleranceBand'; readonly percentagePoints: number }
+
+export type LeverageConfig =
+  | { readonly mode: 'none' }
+  | {
+      readonly mode: 'enabled'
+      readonly targetGrossExposure: number
+      readonly maintenanceMargin: number
+      readonly annualBorrowingSpread: number
+      readonly reset: LeverageResetConfig
+    }
+
 export type TransactionCostConfig = {
   readonly fixedPerOrder: number
   readonly proportionalRate: number
@@ -45,6 +60,7 @@ export type SimulationConfig = {
   readonly rebalancing?: RebalancingConfig
   readonly transactionCosts?: TransactionCostConfig
   readonly tax?: TaxConfig
+  readonly leverage?: LeverageConfig
   readonly paths: number
   readonly periods: number
   readonly seed: number
@@ -120,6 +136,18 @@ export type RetainedPath = {
   readonly costBases: Float64Array
   readonly lossCarryforwards: Float64Array
   readonly scenarios: readonly PeriodScenario[]
+  // Leverage history is retained for at most 50 paths. Keeping it out of the
+  // all-path buffers preserves the worker's bounded-memory contract.
+  readonly leverage?: RetainedLeverageEvidence | null
+}
+
+export type RetainedLeverageEvidence = {
+  readonly debts: Float64Array
+  readonly grossAssets: Float64Array
+  readonly grossLeverages: Float64Array
+  readonly maintenanceMargins: Float64Array
+  readonly marginCalls: Uint8Array
+  readonly leverageResets: Uint8Array
 }
 
 // One canonical percentile shape, still used by core/math/quantiles.ts's
@@ -245,6 +273,7 @@ export function validateSimulationConfig(
   validateRebalancing(config.rebalancing, config.periods, errors)
   validateTransactionCosts(config.transactionCosts, errors)
   validateTax(config.tax, errors)
+  validateLeverage(config.leverage, config.periods, frequency, errors)
 
   if (!isUint32(config.seed)) {
     errors.push(
@@ -345,6 +374,90 @@ function validateTax(
       error(
         'config.tax.initialCostBasis',
         'Initial cost basis must be blank or a finite non-negative amount.',
+      ),
+    )
+  }
+}
+
+function validateLeverage(
+  leverage: LeverageConfig | undefined,
+  periods: number,
+  frequency: Frequency,
+  errors: ValidationError[],
+): void {
+  if (leverage === undefined || leverage.mode === 'none') return
+
+  if (frequency !== 'weekly') {
+    errors.push(
+      error('config.leverage.frequency', 'Leverage requires weekly data.'),
+    )
+  }
+
+  const { maintenanceMargin, targetGrossExposure, annualBorrowingSpread } =
+    leverage
+  if (
+    !Number.isFinite(maintenanceMargin) ||
+    maintenanceMargin <= 0 ||
+    maintenanceMargin > 1
+  ) {
+    errors.push(
+      error(
+        'config.leverage.maintenanceMargin',
+        'Maintenance margin must be greater than 0% and no more than 100%.',
+      ),
+    )
+  }
+
+  const maximumLeverage =
+    Number.isFinite(maintenanceMargin) && maintenanceMargin > 0
+      ? Math.min(4, 1 / maintenanceMargin)
+      : 4
+  if (
+    !Number.isFinite(targetGrossExposure) ||
+    targetGrossExposure < 1 ||
+    targetGrossExposure > maximumLeverage
+  ) {
+    errors.push(
+      error(
+        'config.leverage.targetGrossExposure',
+        `Target gross exposure must be between 1x and ${maximumLeverage.toFixed(4)}x.`,
+      ),
+    )
+  }
+
+  if (!isFiniteNonNegative(annualBorrowingSpread)) {
+    errors.push(
+      error(
+        'config.leverage.annualBorrowingSpread',
+        'Annual borrowing spread must be finite and non-negative.',
+      ),
+    )
+  }
+
+  const reset = leverage.reset
+  if (
+    reset.mode === 'time' &&
+    (!Number.isInteger(reset.everyPeriods) ||
+      reset.everyPeriods < 1 ||
+      reset.everyPeriods > periods)
+  ) {
+    errors.push(
+      error(
+        'config.leverage.reset.everyPeriods',
+        'Leverage reset interval must be an integer within the simulation horizon.',
+      ),
+    )
+  }
+  if (
+    reset.mode === 'toleranceBand' &&
+    (!Number.isFinite(reset.percentagePoints) ||
+      reset.percentagePoints <= 0 ||
+      reset.percentagePoints > 100)
+  ) {
+    errors.push(
+      error(
+        'config.leverage.reset.percentagePoints',
+        'Leverage reset tolerance must be greater than 0 and no more than 100 percentage points.',
       ),
     )
   }

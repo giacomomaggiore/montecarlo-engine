@@ -98,6 +98,16 @@ export function buildTransferList(result: SimulationResult): ArrayBuffer[] {
       path.costBases.buffer,
       path.lossCarryforwards.buffer,
     )
+    if (path.leverage != null) {
+      buffers.push(
+        path.leverage.debts.buffer,
+        path.leverage.grossAssets.buffer,
+        path.leverage.grossLeverages.buffer,
+        path.leverage.maintenanceMargins.buffer,
+        path.leverage.marginCalls.buffer,
+        path.leverage.leverageResets.buffer,
+      )
+    }
   }
 
   return buffers

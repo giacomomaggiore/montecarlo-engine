@@ -942,3 +942,47 @@ Phase 7: transaction costs, then taxes. It can consume Phase 6's retained canoni
 ### Next step
 
 Phase 8: leverage and margin calls. It can reuse Phase 7's sale execution and tax machinery for forced deleveraging, while adding debt, borrowing interest, maintenance-margin checks, insolvency, and the leverage-ratio chart.
+
+## 2026-08-17 - Phase 8: leverage and margin calls
+
+### Scope completed
+
+- Added weekly-only long-only leverage with a closed `LeverageConfig` and reset configuration.
+- Added debt accrual at the sampled weekly risk-free rate plus an effective weekly borrowing spread derived from the user-entered annual spread.
+- Reused the Phase 7 executed-order and tax ledger for contribution purchases, rebalancing, forced deleveraging, voluntary resets, and terminal liquidation.
+- Added explicit `insolvent` outcomes, bounded retained-path debt/margin evidence, borrowing-interest and margin-call summaries, leverage form controls, and a retained-path weekly leverage chart.
+
+### Accounting conventions
+
+- Opening gross assets are `initialInvestment * targetGrossExposure`; opening debt is the difference. The initial tax basis is the full gross purchase value, including borrowed capital.
+- Returns and debt interest occur before scheduled contributions. A contribution can therefore prevent a margin call, but no rescue deposits exist.
+- Margin calls use deterministic proportional sales. Sale fees and immediate capital-gains tax reduce the amount available to repay debt. A 60-step bisection search finds the smallest sale restoring the target gross leverage after friction.
+- Upward voluntary resets use the same deterministic post-fee bisection rule for debt-financed target-weight buys. Downward resets repay debt through the same sale/tax path as a margin call.
+- At final liquidation, Phase 7 sells assets and computes fees/tax first; the remaining proceeds repay debt. A shortfall is an `insolvent` path with zero terminal wealth. Other malformed accounting failures remain `NaN` and do not inflate ruin probability.
+
+### Files added
+
+- `src/core/portfolio/leverage.ts` and `leverage.test.ts`: pure leverage snapshots, debt accrual, trigger checks, and proportional trade intent.
+- `src/charts/leverageChart.ts` and `src/features/simulator/LeverageChart.tsx`: retained-path weekly gross-leverage chart with target and maintenance-implied limit.
+- `validation/phase_8_independent_check.py`: procedural reference trace for the frictionless forced-deleveraging example.
+
+### Files changed
+
+- `src/core/simulation/simulationTypes.ts`, `runSimulation.ts`, and tests: leverage config validation, debt-aware path accounting, terminal debt settlement, retained audit arrays, insolvency semantics, and leverage metrics.
+- `src/core/portfolio/metrics.ts`: borrowing-interest and margin-call summaries.
+- `src/workers/workerMessages.ts`: transfers only the bounded retained leverage buffers.
+- `src/features/simulator/simulatorState.ts`, `PortfolioSettings.tsx`, `ResultsPanel.tsx`, and page tests: validated controls, weekly enforcement, warnings, metrics, path audit table, and chart presentation.
+- `README.md`: Phase 8 and all subphases marked complete.
+
+### Validation completed
+
+- Focused leverage and runner tests: 19 tests passed.
+- Complete Vitest suite: 32 files and 267 tests passed.
+- `python3 validation/phase_8_independent_check.py` reproduced `grossAssets=1200`, `debt=600`, `equity=600`, and `grossLeverage=2` after the documented 20% loss / 40% maintenance-call case.
+- `npm run build`: passed.
+- `npm run test:e2e`: 5 browser smoke tests passed, including weekly leverage controls and retained-path chart rendering.
+- Lint and formatting are re-run after this documentation entry.
+
+### Next step
+
+Phase 9: CSV export of completed-run metadata, all terminal outcomes, and bounded retained-path detail.

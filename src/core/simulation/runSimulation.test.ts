@@ -40,6 +40,80 @@ function createConfig(
 }
 
 describe('runSimulation', () => {
+  it('marks a debt-funded total equity wipeout as insolvent with zero terminal wealth', () => {
+    const dataset = createDataset()
+    const engine: SimulationEngine = {
+      nextScenario: () => ({
+        assetReturns: [-0.5, 0],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: null,
+      }),
+    }
+    const result = runSimulation({
+      engine,
+      dataset,
+      config: createConfig({
+        weights: [1],
+        periods: 1,
+        leverage: {
+          mode: 'enabled',
+          targetGrossExposure: 2,
+          maintenanceMargin: 0.3,
+          annualBorrowingSpread: 0,
+          reset: { mode: 'none' },
+        },
+      }),
+      selection: { portfolioAssetIndices: [0], benchmarkAssetIndex: null },
+      modelVersion: 'scripted',
+      prngVersion: 'scripted',
+    })
+
+    if (!result.ok) throw new Error('expected valid leverage configuration')
+    expect(result.value.terminalWealth[0]).toBe(0)
+    expect(result.value.failures[0].code).toBe('insolvent')
+    expect(result.value.metrics.ruinProbability).toBe(1)
+    expect(result.value.retainedPaths[0].leverage?.debts[0]).toBe(1000)
+  })
+
+  it('uses a proportional forced sale to restore target leverage after a margin breach', () => {
+    const dataset = createDataset()
+    const engine: SimulationEngine = {
+      nextScenario: () => ({
+        assetReturns: [-0.2, 0],
+        inflation: 0,
+        riskFreeRate: 0,
+        sourceRowIndex: null,
+      }),
+    }
+    const result = runSimulation({
+      engine,
+      dataset,
+      config: createConfig({
+        weights: [1],
+        periods: 1,
+        leverage: {
+          mode: 'enabled',
+          targetGrossExposure: 2,
+          maintenanceMargin: 0.4,
+          annualBorrowingSpread: 0,
+          reset: { mode: 'none' },
+        },
+      }),
+      selection: { portfolioAssetIndices: [0], benchmarkAssetIndex: null },
+      modelVersion: 'scripted',
+      prngVersion: 'scripted',
+    })
+
+    if (!result.ok) throw new Error('expected a successful leveraged run')
+    const retained = result.value.retainedPaths[0]
+    expect(result.value.failures).toEqual([])
+    expect(retained.leverage?.marginCalls[1]).toBe(1)
+    expect(retained.leverage?.grossLeverages[1]).toBeCloseTo(2)
+    expect(retained.leverage?.debts[1]).toBeCloseTo(600)
+    expect(result.value.terminalWealth[0]).toBeCloseTo(600)
+  })
+
   it('matches a hand-calculated three-period single-path run', () => {
     const dataset = createDataset()
     const engine = createHistoricalBootstrapEngine(dataset, 0)

@@ -69,6 +69,8 @@ export type SimulationMetrics = {
   readonly realizedGainLoss: MetricSummary | null
   readonly taxesPaid: MetricSummary | null
   readonly lossCarryforward: MetricSummary | null
+  readonly borrowingInterest?: MetricSummary | null
+  readonly marginCallProbability?: number | null
   readonly benchmark: BenchmarkMetrics | null
 }
 

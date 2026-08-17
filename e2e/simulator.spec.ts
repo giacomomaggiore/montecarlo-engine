@@ -66,6 +66,25 @@ test('runs DCA with transaction costs and capital-gains tax', async ({
   await expect(page.getByText(/fixed order cost \$1.*tax 20.0%/)).toBeVisible()
 })
 
+test('runs weekly leverage and renders retained-path leverage evidence', async ({
+  page,
+}) => {
+  await configureSmallBootstrapRun(page)
+  await page.getByLabel('Enable weekly margin leverage').check()
+  await page.getByLabel(/Target gross exposure/).fill('2')
+  await page.getByLabel('Maintenance margin (%)').fill('40')
+  await page.getByLabel('Annual borrowing spread (%)').fill('1')
+  await page.getByRole('button', { name: 'Run' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible()
+  await expect(page.getByText('Cumulative borrowing interest')).toBeVisible()
+  await page.getByLabel('Path to inspect').selectOption('0')
+  await expect(
+    page.getByRole('heading', { name: 'Weekly leverage ratio' }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Weekly leverage ratio chart')).toBeVisible()
+})
+
 test('cancels a still-running large simulation', async ({ page }) => {
   await configureSmallBootstrapRun(page)
   // 19,000 x 52 is within the 10,000,000-work cap but long enough that the

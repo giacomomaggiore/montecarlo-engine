@@ -2,6 +2,7 @@ import type { ValidationError } from '../../core/validation'
 import { describedBy, errorsForCode } from './simulatorState'
 import type {
   CashFlowMode,
+  LeverageResetMode,
   RebalancingMode,
   SimulatorInputs,
   SimulatorInputsAction,
@@ -21,6 +22,12 @@ const REBALANCING_LABELS: Record<RebalancingMode, string> = {
   none: 'None',
   time: 'Every number of periods',
   toleranceBand: 'When allocation drift exceeds a band',
+}
+
+const LEVERAGE_RESET_LABELS: Record<LeverageResetMode, string> = {
+  none: 'None',
+  time: 'Every number of periods',
+  toleranceBand: 'When gross leverage drifts beyond a band',
 }
 
 export function PortfolioSettings({
@@ -56,6 +63,27 @@ export function PortfolioSettings({
     errors,
     'inputs.tax.initialCostBasis',
   )
+  const leverageErrors = errorsForCode(
+    errors,
+    'inputs.leverage.targetGrossExposure',
+  )
+  const spreadErrors = errorsForCode(
+    errors,
+    'inputs.leverage.annualBorrowingSpread',
+  )
+  const resetPeriodErrors = errorsForCode(
+    errors,
+    'inputs.leverage.reset.everyPeriods',
+  )
+  const resetBandErrors = errorsForCode(
+    errors,
+    'inputs.leverage.reset.percentagePoints',
+  )
+  const maintenanceMargin = Number(inputs.maintenanceMarginPercent) / 100
+  const maximumLeverage =
+    Number.isFinite(maintenanceMargin) && maintenanceMargin > 0
+      ? Math.min(4, 1 / maintenanceMargin)
+      : 4
 
   return (
     <fieldset className="input-section">
@@ -333,6 +361,186 @@ export function PortfolioSettings({
             id="initialCostBasis-errors"
           />
         </div>
+      </fieldset>
+
+      <fieldset className="radio-group">
+        <legend>Leverage</legend>
+        <label>
+          <input
+            checked={inputs.leverageMode === 'none'}
+            name="leverage-mode"
+            onChange={() =>
+              dispatch({ type: 'set-leverage-mode', mode: 'none' })
+            }
+            type="radio"
+          />
+          No leverage
+        </label>
+        <label>
+          <input
+            checked={inputs.leverageMode === 'enabled'}
+            name="leverage-mode"
+            onChange={() =>
+              dispatch({ type: 'set-leverage-mode', mode: 'enabled' })
+            }
+            type="radio"
+          />
+          Enable weekly margin leverage
+        </label>
+
+        {inputs.leverageMode === 'enabled' && (
+          <>
+            <div className="labelled-field">
+              <label htmlFor="field-targetGrossExposure">
+                Target gross exposure (x, maximum {maximumLeverage.toFixed(2)}x)
+              </label>
+              <input
+                aria-describedby={describedBy(
+                  'targetGrossExposure-errors',
+                  leverageErrors,
+                )}
+                aria-invalid={leverageErrors.length > 0}
+                id="field-targetGrossExposure"
+                inputMode="decimal"
+                onChange={(event) =>
+                  dispatch({
+                    type: 'set-field',
+                    field: 'targetGrossExposure',
+                    value: event.target.value,
+                  })
+                }
+                value={inputs.targetGrossExposure}
+              />
+              <FieldErrors
+                errors={leverageErrors}
+                id="targetGrossExposure-errors"
+              />
+            </div>
+            <div className="labelled-field">
+              <label htmlFor="field-maintenanceMarginPercent">
+                Maintenance margin (%)
+              </label>
+              <input
+                id="field-maintenanceMarginPercent"
+                inputMode="decimal"
+                onChange={(event) =>
+                  dispatch({
+                    type: 'set-field',
+                    field: 'maintenanceMarginPercent',
+                    value: event.target.value,
+                  })
+                }
+                value={inputs.maintenanceMarginPercent}
+              />
+            </div>
+            <div className="labelled-field">
+              <label htmlFor="field-annualBorrowingSpreadPercent">
+                Annual borrowing spread (%)
+              </label>
+              <input
+                aria-describedby={describedBy(
+                  'annualBorrowingSpread-errors',
+                  spreadErrors,
+                )}
+                aria-invalid={spreadErrors.length > 0}
+                id="field-annualBorrowingSpreadPercent"
+                inputMode="decimal"
+                onChange={(event) =>
+                  dispatch({
+                    type: 'set-field',
+                    field: 'annualBorrowingSpreadPercent',
+                    value: event.target.value,
+                  })
+                }
+                value={inputs.annualBorrowingSpreadPercent}
+              />
+              <FieldErrors
+                errors={spreadErrors}
+                id="annualBorrowingSpread-errors"
+              />
+            </div>
+            <fieldset className="radio-group">
+              <legend>Leverage reset</legend>
+              {(Object.keys(LEVERAGE_RESET_LABELS) as LeverageResetMode[]).map(
+                (mode) => (
+                  <label key={mode}>
+                    <input
+                      checked={inputs.leverageResetMode === mode}
+                      name="leverage-reset-mode"
+                      onChange={() =>
+                        dispatch({ type: 'set-leverage-reset-mode', mode })
+                      }
+                      type="radio"
+                    />
+                    {LEVERAGE_RESET_LABELS[mode]}
+                  </label>
+                ),
+              )}
+            </fieldset>
+            {inputs.leverageResetMode === 'time' && (
+              <div className="labelled-field">
+                <label htmlFor="field-leverageResetEveryPeriods">
+                  Reset every number of periods
+                </label>
+                <input
+                  aria-describedby={describedBy(
+                    'leverageResetEveryPeriods-errors',
+                    resetPeriodErrors,
+                  )}
+                  aria-invalid={resetPeriodErrors.length > 0}
+                  id="field-leverageResetEveryPeriods"
+                  inputMode="numeric"
+                  onChange={(event) =>
+                    dispatch({
+                      type: 'set-field',
+                      field: 'leverageResetEveryPeriods',
+                      value: event.target.value,
+                    })
+                  }
+                  value={inputs.leverageResetEveryPeriods}
+                />
+                <FieldErrors
+                  errors={resetPeriodErrors}
+                  id="leverageResetEveryPeriods-errors"
+                />
+              </div>
+            )}
+            {inputs.leverageResetMode === 'toleranceBand' && (
+              <div className="labelled-field">
+                <label htmlFor="field-leverageResetBandPercentagePoints">
+                  Gross leverage drift band (percentage points, strictly beyond)
+                </label>
+                <input
+                  aria-describedby={describedBy(
+                    'leverageResetBandPercentagePoints-errors',
+                    resetBandErrors,
+                  )}
+                  aria-invalid={resetBandErrors.length > 0}
+                  id="field-leverageResetBandPercentagePoints"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    dispatch({
+                      type: 'set-field',
+                      field: 'leverageResetBandPercentagePoints',
+                      value: event.target.value,
+                    })
+                  }
+                  value={inputs.leverageResetBandPercentagePoints}
+                />
+                <FieldErrors
+                  errors={resetBandErrors}
+                  id="leverageResetBandPercentagePoints-errors"
+                />
+              </div>
+            )}
+            {Number(inputs.targetGrossExposure) === maximumLeverage && (
+              <p className="input-hint" role="alert">
+                No maintenance buffer: target exposure equals the margin
+                boundary.
+              </p>
+            )}
+          </>
+        )}
       </fieldset>
 
       <fieldset className="radio-group">

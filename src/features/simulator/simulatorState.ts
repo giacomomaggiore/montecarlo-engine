@@ -9,6 +9,8 @@ import {
   MAX_SIMULATION_WORK,
   MAX_YEARS,
   type SimulationAssetSelection,
+  type LeverageConfig,
+  type LeverageResetConfig,
   type RebalancingConfig,
   validateSimulationConfig,
 } from '../../core/simulation/simulationTypes'
@@ -34,6 +36,8 @@ import type { EngineSelection } from '../../workers/workerMessages'
 export type EngineChoice = 'bootstrap' | 'studentT'
 export type CashFlowMode = CashFlowConfig['mode']
 export type RebalancingMode = RebalancingConfig['mode']
+export type LeverageMode = LeverageConfig['mode']
+export type LeverageResetMode = LeverageResetConfig['mode']
 
 export type HoldingInput = {
   readonly assetId: string
@@ -77,6 +81,13 @@ export type SimulatorInputs = {
   readonly proportionalTransactionCostPercent: string
   readonly capitalGainsTaxPercent: string
   readonly initialCostBasis: string
+  readonly leverageMode: LeverageMode
+  readonly targetGrossExposure: string
+  readonly maintenanceMarginPercent: string
+  readonly annualBorrowingSpreadPercent: string
+  readonly leverageResetMode: LeverageResetMode
+  readonly leverageResetEveryPeriods: string
+  readonly leverageResetBandPercentagePoints: string
   readonly parametric: ParametricInputs
   // Display-only toggle (never sent to the Worker): nominal accounting
   // values versus per-path inflation-deflated real values.
@@ -103,6 +114,13 @@ export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   proportionalTransactionCostPercent: '0',
   capitalGainsTaxPercent: '0',
   initialCostBasis: '',
+  leverageMode: 'none',
+  targetGrossExposure: '1.5',
+  maintenanceMarginPercent: '30',
+  annualBorrowingSpreadPercent: '1.5',
+  leverageResetMode: 'none',
+  leverageResetEveryPeriods: '52',
+  leverageResetBandPercentagePoints: '10',
   parametric: {
     returnMode: 'historical',
     nuMode: 'automatic',
@@ -127,6 +145,11 @@ export type ScalarInputField =
   | 'proportionalTransactionCostPercent'
   | 'capitalGainsTaxPercent'
   | 'initialCostBasis'
+  | 'targetGrossExposure'
+  | 'maintenanceMarginPercent'
+  | 'annualBorrowingSpreadPercent'
+  | 'leverageResetEveryPeriods'
+  | 'leverageResetBandPercentagePoints'
 
 export type ParametricScalarField =
   'manualNu' | 'annualInflationPercent' | 'annualRiskFreePercent'
@@ -153,6 +176,11 @@ export type SimulatorInputsAction =
     }
   | { readonly type: 'set-cash-flow-mode'; readonly mode: CashFlowMode }
   | { readonly type: 'set-rebalancing-mode'; readonly mode: RebalancingMode }
+  | { readonly type: 'set-leverage-mode'; readonly mode: LeverageMode }
+  | {
+      readonly type: 'set-leverage-reset-mode'
+      readonly mode: LeverageResetMode
+    }
   | {
       readonly type: 'set-parametric-return-mode'
       readonly mode: ParametricInputs['returnMode']
@@ -247,6 +275,18 @@ export function reduceSimulatorInputs(
 
     case 'set-rebalancing-mode':
       return { ...state, rebalancingMode: action.mode }
+
+    case 'set-leverage-mode':
+      return {
+        ...state,
+        leverageMode: action.mode,
+        // Maintenance calls are a weekly rule, so enabling leverage locks the
+        // only released compatible frequency at the input boundary too.
+        frequency: action.mode === 'enabled' ? 'weekly' : state.frequency,
+      }
+
+    case 'set-leverage-reset-mode':
+      return { ...state, leverageResetMode: action.mode }
 
     case 'set-parametric-return-mode':
       return {
@@ -580,6 +620,102 @@ export function deriveRunPlan(
     )
   }
 
+  let leverage: LeverageConfig | null = null
+  if (inputs.leverageMode === 'none') {
+    leverage = { mode: 'none' }
+  } else {
+    const targetGrossExposure = parseFiniteNumber(inputs.targetGrossExposure)
+    const maintenanceMarginPercent = parseFiniteNumber(
+      inputs.maintenanceMarginPercent,
+    )
+    const annualBorrowingSpreadPercent = parseFiniteNumber(
+      inputs.annualBorrowingSpreadPercent,
+    )
+    const maintenanceMargin =
+      maintenanceMarginPercent === null ? null : maintenanceMarginPercent / 100
+    if (
+      targetGrossExposure === null ||
+      targetGrossExposure < 1 ||
+      maintenanceMargin === null ||
+      maintenanceMargin <= 0 ||
+      maintenanceMargin > 1 ||
+      targetGrossExposure > Math.min(4, 1 / maintenanceMargin)
+    ) {
+      errors.push(
+        inputError(
+          'inputs.leverage.targetGrossExposure',
+          'Target gross exposure must be between 1x and the margin-compatible maximum.',
+        ),
+      )
+    }
+    if (
+      annualBorrowingSpreadPercent === null ||
+      annualBorrowingSpreadPercent < 0
+    ) {
+      errors.push(
+        inputError(
+          'inputs.leverage.annualBorrowingSpread',
+          'Annual borrowing spread must be a non-negative percentage.',
+        ),
+      )
+    }
+
+    let reset: LeverageResetConfig | null = null
+    if (inputs.leverageResetMode === 'none') {
+      reset = { mode: 'none' }
+    } else if (inputs.leverageResetMode === 'time') {
+      const everyPeriods = parseFiniteNumber(inputs.leverageResetEveryPeriods)
+      if (
+        everyPeriods === null ||
+        !Number.isInteger(everyPeriods) ||
+        everyPeriods < 1 ||
+        (periods !== null && everyPeriods > periods)
+      ) {
+        errors.push(
+          inputError(
+            'inputs.leverage.reset.everyPeriods',
+            'Leverage reset interval must be a whole number within the horizon.',
+          ),
+        )
+      } else {
+        reset = { mode: 'time', everyPeriods }
+      }
+    } else {
+      const percentagePoints = parseFiniteNumber(
+        inputs.leverageResetBandPercentagePoints,
+      )
+      if (
+        percentagePoints === null ||
+        percentagePoints <= 0 ||
+        percentagePoints > 100
+      ) {
+        errors.push(
+          inputError(
+            'inputs.leverage.reset.percentagePoints',
+            'Leverage reset tolerance must be greater than 0 and no more than 100 percentage points.',
+          ),
+        )
+      } else {
+        reset = { mode: 'toleranceBand', percentagePoints }
+      }
+    }
+
+    if (
+      targetGrossExposure !== null &&
+      maintenanceMargin !== null &&
+      annualBorrowingSpreadPercent !== null &&
+      reset !== null
+    ) {
+      leverage = {
+        mode: 'enabled',
+        targetGrossExposure,
+        maintenanceMargin,
+        annualBorrowingSpread: annualBorrowingSpreadPercent / 100,
+        reset,
+      }
+    }
+  }
+
   // --- Parametric options (only when that engine is selected) -------------
   let engineSelection: EngineSelection | null = null
   if (inputs.engine === 'bootstrap') {
@@ -681,6 +817,7 @@ export function deriveRunPlan(
       capitalGainsRate: (capitalGainsTaxPercent as number) / 100,
       initialCostBasis: parsedInitialCostBasis,
     },
+    leverage: leverage as LeverageConfig,
     paths: paths as number,
     periods: periods as number,
     seed: seed as number,

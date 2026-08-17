@@ -7,6 +7,7 @@ import type {
   SimulationResult,
 } from '../../core/simulation/simulationTypes'
 import { PortfolioChart } from './PortfolioChart'
+import { LeverageChart } from './LeverageChart'
 
 // Phase 4.6 — everything below the input workspace once a run has completed:
 // the previous-run label, the chart with its tabular alternative, the metrics
@@ -184,6 +185,13 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
           />
           <MetricRow
             format={(value) => currency.format(value)}
+            label="Cumulative borrowing interest"
+            summary={metrics.borrowingInterest ?? null}
+            totalPaths={totalPaths}
+            unavailableReason="leverage was disabled or no leveraged path completed"
+          />
+          <MetricRow
+            format={(value) => currency.format(value)}
             label="Realised gain / loss"
             summary={metrics.realizedGainLoss}
             totalPaths={totalPaths}
@@ -218,6 +226,15 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
           {metrics.ruinProbability === 0 &&
             ' — structurally zero until leverage exists: an unleveraged long-only portfolio cannot go insolvent.'}
         </dd>
+        {metrics.marginCallProbability != null && (
+          <>
+            <dt>Margin-call incidence</dt>
+            <dd>
+              {percent.format(metrics.marginCallProbability)} of paths had at
+              least one forced deleveraging sale.
+            </dd>
+          </>
+        )}
       </dl>
 
       {metrics.benchmark !== null &&
@@ -329,6 +346,21 @@ function PathInspector({
 
       {selected !== undefined && (
         <div className="path-detail-scroll">
+          {selected.leverage != null &&
+            result.metadata.config.leverage?.mode === 'enabled' && (
+              <section aria-labelledby="leverage-chart-heading">
+                <h4 id="leverage-chart-heading">Weekly leverage ratio</h4>
+                <LeverageChart
+                  maintenanceMargin={
+                    result.metadata.config.leverage.maintenanceMargin
+                  }
+                  path={selected}
+                  targetGrossExposure={
+                    result.metadata.config.leverage.targetGrossExposure
+                  }
+                />
+              </section>
+            )}
           <table className="metrics-table">
             <caption>
               Path {selected.pathIndex}, period by period
@@ -342,6 +374,11 @@ function PathInspector({
                 <th scope="col">Equity</th>
                 {displayMode === 'real' && <th scope="col">Real equity</th>}
                 <th scope="col">Contribution</th>
+                {selected.leverage != null && <th scope="col">Debt</th>}
+                {selected.leverage != null && <th scope="col">Margin</th>}
+                {selected.leverage != null && (
+                  <th scope="col">Leverage event</th>
+                )}
                 <th scope="col">Executed orders</th>
                 <th scope="col">Costs</th>
                 <th scope="col">Gain / loss</th>
@@ -385,6 +422,27 @@ function PathInspector({
                         ? currency.format(selected.contributions[periodIndex])
                         : '—'}
                     </td>
+                    {selected.leverage != null && (
+                      <td>
+                        {currency.format(selected.leverage.debts[periodIndex])}
+                      </td>
+                    )}
+                    {selected.leverage != null && (
+                      <td>
+                        {percent.format(
+                          selected.leverage.maintenanceMargins[periodIndex],
+                        )}
+                      </td>
+                    )}
+                    {selected.leverage != null && (
+                      <td>
+                        {selected.leverage.marginCalls[periodIndex] === 1
+                          ? 'margin call'
+                          : selected.leverage.leverageResets[periodIndex] === 1
+                            ? 'reset'
+                            : 'none'}
+                      </td>
+                    )}
                     <td>
                       {formatExecutedTrades(
                         selected.executedTrades[periodIndex] ?? [],

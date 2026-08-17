@@ -5,10 +5,19 @@ import {
   REPRESENTATIVE_PATH_QUANTILE_LEVELS,
 } from '../math/quantiles'
 import {
-  allocateInitialInvestment,
   applyPeriodReturn,
+  computeScheduledContribution,
   stepPortfolioPeriod,
 } from '../portfolio/cashFlows'
+import {
+  accrueDebt,
+  createProportionalSaleTrades,
+  createTargetWeightBuyTrades,
+  initializeLeveragedPortfolio,
+  isLeverageResetDue,
+  requiresMarginCall,
+  snapshotLeverage,
+} from '../portfolio/leverage'
 import {
   initializeBenchmark,
   stepBenchmarkPeriod,
@@ -39,6 +48,7 @@ import type { ValidationResult } from '../validation'
 import type { SimulationEngine } from './simulationEngine'
 import type {
   PeriodScenario,
+  LeverageConfig,
   RepresentativePath,
   RebalancingConfig,
   RetainedPath,
@@ -146,6 +156,8 @@ export function runSimulation(
   const realizedGainLossPerPath = new Float64Array(paths)
   const taxesPaidPerPath = new Float64Array(paths)
   const lossCarryforwardPerPath = new Float64Array(paths)
+  const borrowingInterestPerPath = new Float64Array(paths)
+  const marginCallPerPath = new Uint8Array(paths)
   // Reusable IRR schedule scratch (investor-perspective net cash flows):
   // one O(T) buffer reused by every path, never O(N * T) storage.
   const cashFlowScratch = new Float64Array(periodCount)
@@ -158,6 +170,7 @@ export function runSimulation(
     (config.transactionCosts?.fixedPerOrder ?? 0) > 0 ||
     (config.transactionCosts?.proportionalRate ?? 0) > 0 ||
     (config.tax?.capitalGainsRate ?? 0) > 0
+  const leverage = config.leverage?.mode === 'enabled' ? config.leverage : null
 
   // Time complexity: O(N * T) — one engine draw, one accounting step, and one
   // O(1) metrics update per path per period, matching the N (paths) * T
@@ -198,16 +211,35 @@ export function runSimulation(
     const retainedLossCarryforwards = isRetained
       ? new Float64Array(periodCount)
       : null
+    const retainedLeverage =
+      isRetained && leverage !== null
+        ? {
+            debts: new Float64Array(periodCount),
+            grossAssets: new Float64Array(periodCount),
+            grossLeverages: new Float64Array(periodCount),
+            maintenanceMargins: new Float64Array(periodCount),
+            marginCalls: new Uint8Array(periodCount),
+            leverageResets: new Uint8Array(periodCount),
+          }
+        : null
 
-    let holdings: readonly number[] = allocateInitialInvestment(
+    const opening = initializeLeveragedPortfolio(
       initialInvestment,
       weights,
+      leverage ?? undefined,
     )
-    let taxState = initializeTaxState(initialInvestment, weights, config.tax)
+    let holdings: readonly number[] = opening.holdings
+    let debt = opening.debt
+    let taxState = initializeTaxState(
+      leverage === null ? initialInvestment : sum(holdings),
+      weights,
+      config.tax,
+    )
     let cumulativeTransactionCosts = 0
     let cumulativeRealizedGainLoss = 0
     let cumulativeTaxesPaid = 0
-    let equity = sum(holdings)
+    let cumulativeBorrowingInterest = 0
+    let equity = sum(holdings) - debt
     let benchmarkValue =
       selection.benchmarkAssetIndex === null
         ? null
@@ -217,6 +249,17 @@ export function runSimulation(
     retainedValues?.set([equity], 0)
     retainedPriceLevels?.set([1], 0)
     retainedCostBases?.set([sum(taxState.costBases)], 0)
+    const openingLeverage = snapshotLeverage(holdings, debt)
+    retainedLeverage?.debts.set([debt], 0)
+    retainedLeverage?.grossAssets.set([openingLeverage.grossAssets], 0)
+    retainedLeverage?.grossLeverages.set(
+      [openingLeverage.grossLeverage ?? NaN],
+      0,
+    )
+    retainedLeverage?.maintenanceMargins.set(
+      [openingLeverage.maintenanceMargin ?? NaN],
+      0,
+    )
     // retainedContributions[0] stays 0: the initial investment is capital
     // allocation, not a scheduled contribution.
 
@@ -248,31 +291,136 @@ export function runSimulation(
           (assetIndex) => scenario.assetReturns[assetIndex],
         ),
       }
-      const result = stepPortfolioPeriod(
-        holdings,
-        portfolioScenario,
-        cashFlow,
-        weights,
-        periodIndex,
-        initialInvestment,
-      )
+      let contribution: number
+      let periodNeutralReturn: number
+      let intendedTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[] =
+        []
+      let executedTrades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[] =
+        []
+      let periodTransactionCosts = 0
+      let periodRealizedGainLoss = 0
+      let periodTaxesPaid = 0
+      let periodBorrowingInterest = 0
+      let marginCall = false
+      let leverageReset = false
 
-      if (!Number.isFinite(result.equity)) {
-        failures.push({
-          pathIndex,
+      if (leverage !== null) {
+        const leveraged = executeLeveragedPortfolioPeriod({
+          holdings,
+          debt,
+          taxState,
+          assetReturns: portfolioScenario.assetReturns,
+          riskFreeRate: scenario.riskFreeRate,
+          cashFlow,
+          initialInvestment,
+          weights,
+          rebalancing: config.rebalancing,
+          leverage,
           periodIndex,
-          code: 'non-finite-equity',
-          message: 'Portfolio equity became non-finite during accounting.',
+          transactionCosts: config.transactionCosts,
+          tax: config.tax,
         })
-        failedAtPeriod = periodIndex
-        break
+        if (!leveraged.ok) {
+          failures.push({
+            pathIndex,
+            periodIndex,
+            code: leveraged.errors[0].code,
+            message: leveraged.errors[0].message,
+          })
+          failedAtPeriod = periodIndex
+          break
+        }
+        holdings = leveraged.value.holdings
+        debt = leveraged.value.debt
+        taxState = leveraged.value.taxState
+        equity = sum(holdings) - debt
+        contribution = leveraged.value.contribution
+        periodNeutralReturn =
+          startEquity > 0 ? (equity - contribution) / startEquity - 1 : NaN
+        intendedTrades = leveraged.value.intendedTrades
+        executedTrades = leveraged.value.executedTrades
+        periodTransactionCosts = leveraged.value.transactionCosts
+        periodRealizedGainLoss = leveraged.value.realizedGainLoss
+        periodTaxesPaid = leveraged.value.taxesPaid
+        periodBorrowingInterest = leveraged.value.borrowingInterest
+        marginCall = leveraged.value.marginCall
+        leverageReset = leveraged.value.leverageReset
+      } else {
+        const result = stepPortfolioPeriod(
+          holdings,
+          portfolioScenario,
+          cashFlow,
+          weights,
+          periodIndex,
+          initialInvestment,
+        )
+        if (!Number.isFinite(result.equity)) {
+          failures.push({
+            pathIndex,
+            periodIndex,
+            code: 'non-finite-equity',
+            message: 'Portfolio equity became non-finite during accounting.',
+          })
+          failedAtPeriod = periodIndex
+          break
+        }
+        contribution = result.contribution
+        periodNeutralReturn = result.neutralReturn
+
+        if (hasPortfolioFriction) {
+          const ledger = executeCostedPortfolioPeriod({
+            holdings,
+            assetReturns: portfolioScenario.assetReturns,
+            contribution,
+            weights,
+            rebalancing: config.rebalancing,
+            periodIndex,
+            transactionCosts: config.transactionCosts,
+            tax: config.tax,
+            taxState,
+          })
+          if (!ledger.ok) {
+            failures.push({
+              pathIndex,
+              periodIndex,
+              code: ledger.errors[0].code,
+              message: ledger.errors[0].message,
+            })
+            failedAtPeriod = periodIndex
+            break
+          }
+
+          holdings = ledger.value.holdings
+          taxState = ledger.value.taxState
+          equity = sum(holdings)
+          periodNeutralReturn =
+            startEquity > 0 ? (equity - contribution) / startEquity - 1 : NaN
+          intendedTrades = ledger.value.intendedTrades
+          executedTrades = ledger.value.executedTrades
+          periodTransactionCosts = ledger.value.transactionCosts
+          periodRealizedGainLoss = ledger.value.realizedGainLoss
+          periodTaxesPaid = ledger.value.taxesPaid
+        } else {
+          // The Phase 6 path is left byte-for-byte equivalent when friction is
+          // disabled: its zero-cost trades are still exposed as executed events.
+          const rebalanced = rebalancePortfolio(
+            result.holdings,
+            weights,
+            config.rebalancing,
+            periodIndex,
+          )
+          holdings = rebalanced.holdings
+          equity = result.equity
+          intendedTrades = rebalanced.trades
+          executedTrades = priceTrades(rebalanced.trades, undefined).trades
+        }
       }
 
       if (benchmarkValue !== null && selection.benchmarkAssetIndex !== null) {
         const benchmarkResult = stepBenchmarkPeriod(
           benchmarkValue,
           scenario.assetReturns[selection.benchmarkAssetIndex],
-          result.contribution,
+          contribution,
         )
         if (!Number.isFinite(benchmarkResult.value)) {
           failures.push({
@@ -287,68 +435,11 @@ export function runSimulation(
         benchmarkValue = benchmarkResult.value
       }
 
-      let periodNeutralReturn = result.neutralReturn
-      let intendedTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[] =
-        []
-      let executedTrades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[] =
-        []
-      let periodTransactionCosts = 0
-      let periodRealizedGainLoss = 0
-      let periodTaxesPaid = 0
-
-      if (hasPortfolioFriction) {
-        const ledger = executeCostedPortfolioPeriod({
-          holdings,
-          assetReturns: portfolioScenario.assetReturns,
-          contribution: result.contribution,
-          weights,
-          rebalancing: config.rebalancing,
-          periodIndex,
-          transactionCosts: config.transactionCosts,
-          tax: config.tax,
-          taxState,
-        })
-        if (!ledger.ok) {
-          failures.push({
-            pathIndex,
-            periodIndex,
-            code: ledger.errors[0].code,
-            message: ledger.errors[0].message,
-          })
-          failedAtPeriod = periodIndex
-          break
-        }
-
-        holdings = ledger.value.holdings
-        taxState = ledger.value.taxState
-        equity = sum(holdings)
-        periodNeutralReturn =
-          startEquity > 0
-            ? (equity - result.contribution) / startEquity - 1
-            : NaN
-        intendedTrades = ledger.value.intendedTrades
-        executedTrades = ledger.value.executedTrades
-        periodTransactionCosts = ledger.value.transactionCosts
-        periodRealizedGainLoss = ledger.value.realizedGainLoss
-        periodTaxesPaid = ledger.value.taxesPaid
-      } else {
-        // The Phase 6 path is left byte-for-byte equivalent when friction is
-        // disabled: its zero-cost trades are still exposed as executed events.
-        const rebalanced = rebalancePortfolio(
-          result.holdings,
-          weights,
-          config.rebalancing,
-          periodIndex,
-        )
-        holdings = rebalanced.holdings
-        equity = result.equity
-        intendedTrades = rebalanced.trades
-        executedTrades = priceTrades(rebalanced.trades, undefined).trades
-      }
-
       cumulativeTransactionCosts += periodTransactionCosts
       cumulativeRealizedGainLoss += periodRealizedGainLoss
       cumulativeTaxesPaid += periodTaxesPaid
+      cumulativeBorrowingInterest += periodBorrowingInterest
+      if (marginCall) marginCallPerPath[pathIndex] = 1
       equityByPeriod[periodIndex * paths + pathIndex] = equity
 
       cumulativeLogInflation += scenario.inflation
@@ -360,23 +451,23 @@ export function runSimulation(
       if (periodIndex === periods) {
         finalPeriodMetric = {
           startEquity,
-          contribution: result.contribution,
+          contribution,
           riskFreeRate: scenario.riskFreeRate,
           neutralReturn: periodNeutralReturn,
         }
       } else {
         metricsAccumulator.recordPeriod(
-          result.contribution,
+          contribution,
           periodNeutralReturn,
           scenario.riskFreeRate,
         )
       }
       // Investor-perspective flow: a contribution is money leaving the
       // investor's pocket, hence negative in the IRR schedule.
-      cashFlowScratch[periodIndex] = -result.contribution
+      cashFlowScratch[periodIndex] = -contribution
 
       retainedValues?.set([equity], periodIndex)
-      retainedContributions?.set([result.contribution], periodIndex)
+      retainedContributions?.set([contribution], periodIndex)
       // Retained paths get the full-precision float64 price level for free
       // (we are inside the loop); representative paths, chosen only after
       // the loop, are copied from the float32 buffer instead.
@@ -393,6 +484,22 @@ export function runSimulation(
       retainedTaxesPaid?.set([periodTaxesPaid], periodIndex)
       retainedCostBases?.set([sum(taxState.costBases)], periodIndex)
       retainedLossCarryforwards?.set([taxState.lossCarryforward], periodIndex)
+      const leverageSnapshot = snapshotLeverage(holdings, debt)
+      retainedLeverage?.debts.set([debt], periodIndex)
+      retainedLeverage?.grossAssets.set(
+        [leverageSnapshot.grossAssets],
+        periodIndex,
+      )
+      retainedLeverage?.grossLeverages.set(
+        [leverageSnapshot.grossLeverage ?? NaN],
+        periodIndex,
+      )
+      retainedLeverage?.maintenanceMargins.set(
+        [leverageSnapshot.maintenanceMargin ?? NaN],
+        periodIndex,
+      )
+      retainedLeverage?.marginCalls.set([marginCall ? 1 : 0], periodIndex)
+      retainedLeverage?.leverageResets.set([leverageReset ? 1 : 0], periodIndex)
     }
 
     const failed = failedAtPeriod !== -1
@@ -415,7 +522,7 @@ export function runSimulation(
       }
     }
 
-    if (!failed && hasPortfolioFriction) {
+    if (!failed && (hasPortfolioFriction || leverage !== null)) {
       const liquidation = liquidatePortfolio(
         holdings,
         taxState,
@@ -431,7 +538,18 @@ export function runSimulation(
         })
         failedAtPeriod = periods
       } else {
-        equity = liquidation.value.terminalWealth
+        const terminalEquity = liquidation.value.terminalWealth - debt
+        if (leverage !== null && terminalEquity < -1e-10) {
+          failures.push({
+            pathIndex,
+            periodIndex: periods,
+            code: 'insolvent',
+            message: 'Final liquidation proceeds could not repay debt.',
+          })
+          failedAtPeriod = periods
+        }
+        equity = Math.max(0, terminalEquity)
+        debt = 0
         taxState = liquidation.value.taxState
         cumulativeTransactionCosts += liquidation.value.transactionCosts
         cumulativeRealizedGainLoss += liquidation.value.realizedGainLoss
@@ -483,7 +601,11 @@ export function runSimulation(
       )
     }
 
-    if (failedAfterLiquidation && !failed) {
+    const isInsolvent = failures.some(
+      (failure) =>
+        failure.pathIndex === pathIndex && failure.code === 'insolvent',
+    )
+    if (failedAfterLiquidation && !failed && !isInsolvent) {
       equityByPeriod[periods * paths + pathIndex] = NaN
       priceLevelByPeriod[periods * paths + pathIndex] = NaN
       retainedValues?.set([NaN], periods)
@@ -496,7 +618,11 @@ export function runSimulation(
       retainedLossCarryforwards?.set([NaN], periods)
     }
 
-    terminalWealth[pathIndex] = failedAfterLiquidation ? NaN : equity
+    terminalWealth[pathIndex] = failedAfterLiquidation
+      ? isInsolvent
+        ? 0
+        : NaN
+      : equity
     if (benchmarkTerminalWealth !== null) {
       benchmarkTerminalWealth[pathIndex] =
         failedAfterLiquidation || benchmarkValue === null ? NaN : benchmarkValue
@@ -514,6 +640,7 @@ export function runSimulation(
       realizedGainLossPerPath[pathIndex] = NaN
       taxesPaidPerPath[pathIndex] = NaN
       lossCarryforwardPerPath[pathIndex] = NaN
+      borrowingInterestPerPath[pathIndex] = NaN
       lossCount += 1
     } else {
       const pathMetrics = metricsAccumulator.finish()
@@ -524,6 +651,7 @@ export function runSimulation(
       realizedGainLossPerPath[pathIndex] = cumulativeRealizedGainLoss
       taxesPaidPerPath[pathIndex] = cumulativeTaxesPaid
       lossCarryforwardPerPath[pathIndex] = taxState.lossCarryforward
+      borrowingInterestPerPath[pathIndex] = cumulativeBorrowingInterest
 
       if (growthKind === 'cagr') {
         growthPerPath[pathIndex] = computeCagr(
@@ -578,6 +706,7 @@ export function runSimulation(
         costBases: retainedCostBases,
         lossCarryforwards: retainedLossCarryforwards,
         scenarios: retainedScenarios,
+        leverage: retainedLeverage,
       })
     }
 
@@ -608,6 +737,11 @@ export function runSimulation(
     realizedGainLoss: summarizeAcrossPaths(realizedGainLossPerPath),
     taxesPaid: summarizeAcrossPaths(taxesPaidPerPath),
     lossCarryforward: summarizeAcrossPaths(lossCarryforwardPerPath),
+    borrowingInterest: summarizeAcrossPaths(borrowingInterestPerPath),
+    marginCallProbability:
+      leverage === null
+        ? null
+        : marginCallPerPath.reduce((total, value) => total + value, 0) / paths,
     benchmark:
       benchmarkTerminalWealth === null
         ? null
@@ -659,6 +793,514 @@ type CostedPeriodResult = {
   readonly transactionCosts: number
   readonly realizedGainLoss: number
   readonly taxesPaid: number
+}
+
+type LeveragedPeriodResult = CostedPeriodResult & {
+  readonly contribution: number
+  readonly debt: number
+  readonly borrowingInterest: number
+  readonly marginCall: boolean
+  readonly leverageReset: boolean
+}
+
+type SaleLedgerResult = {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly trades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+  readonly transactionCosts: number
+  readonly realizedGainLoss: number
+  readonly taxesPaid: number
+  readonly netProceeds: number
+}
+
+function executeSaleLedger({
+  holdings,
+  taxState,
+  saleTrades,
+  transactionCosts,
+  tax,
+}: {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly saleTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[]
+  readonly transactionCosts: TransactionCostConfig | undefined
+  readonly tax: TaxConfig | undefined
+}): ValidationResult<SaleLedgerResult> {
+  const pricedSales = priceTrades(saleTrades, transactionCosts)
+  const taxSales = applyTaxableSales(
+    taxState,
+    holdings,
+    pricedSales.trades,
+    tax,
+  )
+  if (!taxSales.ok) return taxSales
+  const afterSales = applyExecutedTrades(holdings, pricedSales.trades)
+  if (!afterSales.ok) return afterSales
+  const netProceeds =
+    pricedSales.grossSells - pricedSales.sellCosts - taxSales.value.taxPaid
+  if (!Number.isFinite(netProceeds) || netProceeds < -1e-10) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'leverage.sale.invalid',
+          message: 'A leveraged sale produced invalid net proceeds.',
+        },
+      ],
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      holdings: afterSales.value,
+      taxState: taxSales.value.state,
+      trades: pricedSales.trades,
+      transactionCosts: pricedSales.sellCosts,
+      realizedGainLoss: taxSales.value.realizedGainLoss,
+      taxesPaid: taxSales.value.taxPaid,
+      netProceeds,
+    },
+  }
+}
+
+function executeBuyLedger({
+  holdings,
+  taxState,
+  buyTrades,
+  transactionCosts,
+}: {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly buyTrades: readonly import('../portfolio/rebalancing').PortfolioTrade[]
+  readonly transactionCosts: TransactionCostConfig | undefined
+}): ValidationResult<{
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly trades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+  readonly transactionCosts: number
+  readonly grossBuys: number
+}> {
+  const pricedBuys = priceTrades(buyTrades, transactionCosts)
+  const afterBuys = applyExecutedTrades(holdings, pricedBuys.trades)
+  if (!afterBuys.ok) return afterBuys
+  return {
+    ok: true,
+    value: {
+      holdings: afterBuys.value,
+      taxState: applyTaxableBuys(taxState, pricedBuys.trades),
+      trades: pricedBuys.trades,
+      transactionCosts: pricedBuys.buyCosts,
+      grossBuys: pricedBuys.grossBuys,
+    },
+  }
+}
+
+// Financial intuition: sale proceeds first pay fees and tax, then reduce
+// debt. Bisection finds the smallest proportional sale that restores the
+// target leverage after those frictions change equity.
+function solveDebtRepayingSales({
+  holdings,
+  taxState,
+  debt,
+  targetGrossExposure,
+  transactionCosts,
+  tax,
+}: {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly debt: number
+  readonly targetGrossExposure: number
+  readonly transactionCosts: TransactionCostConfig | undefined
+  readonly tax: TaxConfig | undefined
+}): ValidationResult<SaleLedgerResult & { readonly debt: number }> {
+  let lower = 0
+  let upper = 1
+  let best: (SaleLedgerResult & { readonly debt: number }) | null = null
+  // Time O(60 * D), space O(D): 60 bisection steps exceed Float64 precision.
+  for (let iteration = 0; iteration < 60; iteration += 1) {
+    const fraction = (lower + upper) / 2
+    const sales = executeSaleLedger({
+      holdings,
+      taxState,
+      saleTrades: createProportionalSaleTrades(holdings, fraction),
+      transactionCosts,
+      tax,
+    })
+    if (!sales.ok) return sales
+    const nextDebt = debt - sales.value.netProceeds
+    const snapshot = snapshotLeverage(sales.value.holdings, nextDebt)
+    const achievesTarget =
+      nextDebt >= -1e-10 &&
+      snapshot.equity > 0 &&
+      snapshot.grossLeverage !== null &&
+      snapshot.grossLeverage <= targetGrossExposure + 1e-10
+    if (achievesTarget) {
+      best = { ...sales.value, debt: Math.max(0, nextDebt) }
+      upper = fraction
+    } else {
+      lower = fraction
+    }
+  }
+  return best === null
+    ? {
+        ok: false,
+        errors: [
+          {
+            code: 'insolvent',
+            message: 'Assets cannot be sold far enough to restore leverage.',
+          },
+        ],
+      }
+    : { ok: true, value: best }
+}
+
+// Financial intuition: a leveraged purchase raises gross assets and debt,
+// while its order fee reduces equity. Bisection therefore solves the actual
+// post-fee leverage instead of trusting a frictionless purchase formula.
+function solveDebtFinancedBuys({
+  holdings,
+  taxState,
+  debt,
+  weights,
+  targetGrossExposure,
+  transactionCosts,
+}: {
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly debt: number
+  readonly weights: readonly number[]
+  readonly targetGrossExposure: number
+  readonly transactionCosts: TransactionCostConfig | undefined
+}): ValidationResult<{
+  readonly holdings: readonly number[]
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly trades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+  readonly transactionCosts: number
+  readonly debt: number
+}> {
+  const opening = snapshotLeverage(holdings, debt)
+  if (!(opening.equity > 0)) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'insolvent',
+          message: 'Equity cannot finance a leverage reset.',
+        },
+      ],
+    }
+  }
+  let lower = 0
+  let upper = opening.equity
+  let bracketed = false
+  for (let expansion = 0; expansion < 20; expansion += 1) {
+    const trial = executeBuyLedger({
+      holdings,
+      taxState,
+      buyTrades: createTargetWeightBuyTrades(weights, upper),
+      transactionCosts,
+    })
+    if (!trial.ok) return trial
+    const snapshot = snapshotLeverage(
+      trial.value.holdings,
+      debt + trial.value.grossBuys + trial.value.transactionCosts,
+    )
+    if (
+      snapshot.grossLeverage !== null &&
+      snapshot.grossLeverage >= targetGrossExposure
+    ) {
+      bracketed = true
+      break
+    }
+    upper *= 2
+  }
+  if (!bracketed) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'insolvent',
+          message: 'Debt-financed buys cannot reach target leverage.',
+        },
+      ],
+    }
+  }
+
+  let best: {
+    readonly holdings: readonly number[]
+    readonly taxState: ReturnType<typeof initializeTaxState>
+    readonly trades: readonly import('../portfolio/transactionCosts').ExecutedPortfolioTrade[]
+    readonly transactionCosts: number
+    readonly debt: number
+  } | null = null
+  // Time O(60 * D), space O(D): the fixed iteration count is deterministic.
+  for (let iteration = 0; iteration < 60; iteration += 1) {
+    const grossBuys = (lower + upper) / 2
+    const trial = executeBuyLedger({
+      holdings,
+      taxState,
+      buyTrades: createTargetWeightBuyTrades(weights, grossBuys),
+      transactionCosts,
+    })
+    if (!trial.ok) return trial
+    const nextDebt = debt + trial.value.grossBuys + trial.value.transactionCosts
+    const snapshot = snapshotLeverage(trial.value.holdings, nextDebt)
+    if (
+      snapshot.grossLeverage !== null &&
+      snapshot.grossLeverage >= targetGrossExposure
+    ) {
+      best = { ...trial.value, debt: nextDebt }
+      upper = grossBuys
+    } else {
+      lower = grossBuys
+    }
+  }
+  return best === null
+    ? {
+        ok: false,
+        errors: [
+          { code: 'insolvent', message: 'Leverage reset did not converge.' },
+        ],
+      }
+    : { ok: true, value: best }
+}
+
+function executeLeveragedPortfolioPeriod({
+  holdings,
+  debt,
+  taxState,
+  assetReturns,
+  riskFreeRate,
+  cashFlow,
+  initialInvestment,
+  weights,
+  rebalancing,
+  leverage,
+  periodIndex,
+  transactionCosts,
+  tax,
+}: {
+  readonly holdings: readonly number[]
+  readonly debt: number
+  readonly taxState: ReturnType<typeof initializeTaxState>
+  readonly assetReturns: readonly number[]
+  readonly riskFreeRate: number
+  readonly cashFlow: import('./simulationTypes').CashFlowConfig
+  readonly initialInvestment: number
+  readonly weights: readonly number[]
+  readonly rebalancing: RebalancingConfig | undefined
+  readonly leverage: Extract<LeverageConfig, { readonly mode: 'enabled' }>
+  readonly periodIndex: number
+  readonly transactionCosts: TransactionCostConfig | undefined
+  readonly tax: TaxConfig | undefined
+}): ValidationResult<LeveragedPeriodResult> {
+  const accrued = accrueDebt(debt, riskFreeRate, leverage.annualBorrowingSpread)
+  if (!accrued.ok) return accrued
+  let nextDebt = accrued.value.debt
+  let nextHoldings: readonly number[] = applyPeriodReturn(
+    holdings,
+    assetReturns,
+  )
+  let nextTaxState = taxState
+  let totalCosts = 0
+  let totalGainLoss = 0
+  let totalTaxes = 0
+  const intendedTrades: import('../portfolio/rebalancing').PortfolioTrade[] = []
+  const executedTrades: import('../portfolio/transactionCosts').ExecutedPortfolioTrade[] =
+    []
+
+  const preContribution = snapshotLeverage(nextHoldings, nextDebt)
+  if (!(preContribution.equity > 0)) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'insolvent',
+          message: 'Equity is non-positive after returns and debt interest.',
+        },
+      ],
+    }
+  }
+  const contribution = computeScheduledContribution(
+    cashFlow,
+    periodIndex,
+    initialInvestment,
+    preContribution.equity,
+  )
+  const contributionTrades = createContributionTrades(
+    contribution,
+    weights,
+    transactionCosts,
+  )
+  if (!contributionTrades.ok) return contributionTrades
+  const contributionBuys = executeBuyLedger({
+    holdings: nextHoldings,
+    taxState: nextTaxState,
+    buyTrades: contributionTrades.value,
+    transactionCosts,
+  })
+  if (!contributionBuys.ok) return contributionBuys
+  nextHoldings = contributionBuys.value.holdings
+  nextTaxState = contributionBuys.value.taxState
+  totalCosts += contributionBuys.value.transactionCosts
+  executedTrades.push(...contributionBuys.value.trades)
+
+  let marginCall = false
+  let leverageReset = false
+  const afterContribution = snapshotLeverage(nextHoldings, nextDebt)
+  if (requiresMarginCall(afterContribution, leverage.maintenanceMargin)) {
+    const forcedSales = solveDebtRepayingSales({
+      holdings: nextHoldings,
+      taxState: nextTaxState,
+      debt: nextDebt,
+      targetGrossExposure: leverage.targetGrossExposure,
+      transactionCosts,
+      tax,
+    })
+    if (!forcedSales.ok) return forcedSales
+    nextHoldings = forcedSales.value.holdings
+    nextTaxState = forcedSales.value.taxState
+    nextDebt = forcedSales.value.debt
+    totalCosts += forcedSales.value.transactionCosts
+    totalGainLoss += forcedSales.value.realizedGainLoss
+    totalTaxes += forcedSales.value.taxesPaid
+    intendedTrades.push(
+      ...forcedSales.value.trades.map((trade) => ({
+        assetIndex: trade.assetIndex,
+        value: trade.value,
+      })),
+    )
+    executedTrades.push(...forcedSales.value.trades)
+    marginCall = true
+  } else {
+    const rebalanced = rebalancePortfolio(
+      nextHoldings,
+      weights,
+      rebalancing,
+      periodIndex,
+    )
+    intendedTrades.push(...rebalanced.trades)
+    const rebalanceSales = executeSaleLedger({
+      holdings: nextHoldings,
+      taxState: nextTaxState,
+      saleTrades: rebalanced.trades.filter((trade) => trade.value < 0),
+      transactionCosts,
+      tax,
+    })
+    if (!rebalanceSales.ok) return rebalanceSales
+    const rebalanceBuys = fundRebalanceBuys(
+      rebalanced.trades.filter((trade) => trade.value > 0),
+      rebalanceSales.value.netProceeds,
+      transactionCosts,
+    )
+    if (!rebalanceBuys.ok) return rebalanceBuys
+    const executedRebalanceBuys = executeBuyLedger({
+      holdings: rebalanceSales.value.holdings,
+      taxState: rebalanceSales.value.taxState,
+      buyTrades: rebalanceBuys.value,
+      transactionCosts,
+    })
+    if (!executedRebalanceBuys.ok) return executedRebalanceBuys
+    nextHoldings = executedRebalanceBuys.value.holdings
+    nextTaxState = executedRebalanceBuys.value.taxState
+    totalCosts +=
+      rebalanceSales.value.transactionCosts +
+      executedRebalanceBuys.value.transactionCosts
+    totalGainLoss += rebalanceSales.value.realizedGainLoss
+    totalTaxes += rebalanceSales.value.taxesPaid
+    executedTrades.push(
+      ...rebalanceSales.value.trades,
+      ...executedRebalanceBuys.value.trades,
+    )
+
+    const beforeReset = snapshotLeverage(nextHoldings, nextDebt)
+    if (
+      isLeverageResetDue(
+        leverage.reset,
+        periodIndex,
+        beforeReset.grossLeverage,
+        leverage.targetGrossExposure,
+      ) &&
+      beforeReset.grossLeverage !== null
+    ) {
+      if (beforeReset.grossLeverage > leverage.targetGrossExposure) {
+        const resetSales = solveDebtRepayingSales({
+          holdings: nextHoldings,
+          taxState: nextTaxState,
+          debt: nextDebt,
+          targetGrossExposure: leverage.targetGrossExposure,
+          transactionCosts,
+          tax,
+        })
+        if (!resetSales.ok) return resetSales
+        nextHoldings = resetSales.value.holdings
+        nextTaxState = resetSales.value.taxState
+        nextDebt = resetSales.value.debt
+        totalCosts += resetSales.value.transactionCosts
+        totalGainLoss += resetSales.value.realizedGainLoss
+        totalTaxes += resetSales.value.taxesPaid
+        intendedTrades.push(
+          ...resetSales.value.trades.map((trade) => ({
+            assetIndex: trade.assetIndex,
+            value: trade.value,
+          })),
+        )
+        executedTrades.push(...resetSales.value.trades)
+      } else {
+        const resetBuys = solveDebtFinancedBuys({
+          holdings: nextHoldings,
+          taxState: nextTaxState,
+          debt: nextDebt,
+          weights,
+          targetGrossExposure: leverage.targetGrossExposure,
+          transactionCosts,
+        })
+        if (!resetBuys.ok) return resetBuys
+        nextHoldings = resetBuys.value.holdings
+        nextTaxState = resetBuys.value.taxState
+        nextDebt = resetBuys.value.debt
+        totalCosts += resetBuys.value.transactionCosts
+        intendedTrades.push(
+          ...resetBuys.value.trades.map((trade) => ({
+            assetIndex: trade.assetIndex,
+            value: trade.value,
+          })),
+        )
+        executedTrades.push(...resetBuys.value.trades)
+      }
+      leverageReset = true
+    }
+  }
+
+  const ending = snapshotLeverage(nextHoldings, nextDebt)
+  if (!(ending.equity > 0) || !Number.isFinite(ending.equity)) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'insolvent',
+          message: 'Leverage accounting produced non-positive equity.',
+        },
+      ],
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      holdings: nextHoldings,
+      taxState: nextTaxState,
+      intendedTrades,
+      executedTrades,
+      transactionCosts: totalCosts,
+      realizedGainLoss: totalGainLoss,
+      taxesPaid: totalTaxes,
+      contribution,
+      debt: nextDebt,
+      borrowingInterest: accrued.value.borrowingInterest,
+      marginCall,
+      leverageReset,
+    },
+  }
 }
 
 // This wrapper leaves Phase 1's return/contribution primitive and Phase 6's
