@@ -1,0 +1,111 @@
+ticker,market,priority,exposure_group,instrument_type,description
+QUAL,USD,core,factor,ETF,US quality factor equities
+VLUE,USD,core,factor,ETF,US value factor equities
+SIZE,USD,core,factor,ETF,US size factor equities
+EFAV,USD,core,factor,ETF,Developed ex-US minimum volatility equities
+AVDV,USD,core,factor,ETF,International developed small-cap value equities
+AVES,USD,core,factor,ETF,Emerging-markets value equities
+JPIN,USD,extended,factor,ETF,International developed multifactor equities
+JPMV,USD,extended,factor,ETF,US minimum-volatility equities
+JVAL,USD,extended,factor,ETF,US value factor equities
+IVAL,USD,extended,factor,ETF,International value factor equities
+DISV,USD,extended,factor,ETF,International small-cap value equities
+VIG,USD,core,factor,ETF,US dividend-growth equities
+SCHD,USD,core,factor,ETF,US dividend-quality equities
+VYM,USD,extended,factor,ETF,US high-dividend equities
+NOBL,USD,extended,factor,ETF,US dividend-aristocrat equities
+EMXC,USD,core,emerging-markets,ETF,Emerging markets excluding China
+MCHI,USD,core,emerging-markets,ETF,China large-cap equities
+KWEB,USD,extended,emerging-markets,ETF,China internet equities
+ASHR,USD,extended,emerging-markets,ETF,China A-share equities
+INDA,USD,core,single-country,ETF,India equities
+FLIN,USD,extended,single-country,ETF,India equities
+EWJ,USD,core,single-country,ETF,Japan equities
+EWY,USD,core,single-country,ETF,South Korea equities
+EWT,USD,core,single-country,ETF,Taiwan equities
+EWH,USD,extended,single-country,ETF,Hong Kong equities
+EWS,USD,extended,single-country,ETF,Singapore equities
+EIDO,USD,extended,single-country,ETF,Indonesia equities
+THD,USD,extended,single-country,ETF,Thailand equities
+EPHE,USD,extended,single-country,ETF,Philippines equities
+EWW,USD,core,single-country,ETF,Mexico equities
+EWZ,USD,core,single-country,ETF,Brazil equities
+EZA,USD,extended,single-country,ETF,South Africa equities
+TUR,USD,extended,single-country,ETF,Turkey equities
+GREK,USD,extended,single-country,ETF,Greece equities
+ARGT,USD,extended,single-country,ETF,Argentina equities
+FM,USD,extended,frontier-markets,ETF,Frontier-market equities
+KSA,USD,extended,single-country,ETF,Saudi Arabia equities
+SCHP,USD,core,bonds,ETF,US inflation-protected Treasury bonds
+IGLB,USD,extended,bonds,ETF,US long-duration investment-grade corporate bonds
+VCLT,USD,extended,bonds,ETF,US long-duration investment-grade corporate bonds
+VCSH,USD,core,bonds,ETF,US short-duration investment-grade corporate bonds
+JNK,USD,core,bonds,ETF,US high-yield corporate bonds
+FALN,USD,extended,bonds,ETF,US fallen-angels high-yield bonds
+ANGL,USD,extended,bonds,ETF,US fallen-angels high-yield bonds
+HYLB,USD,extended,bonds,ETF,US high-yield corporate bonds
+MUB,USD,extended,bonds,ETF,US municipal bonds
+VTEB,USD,extended,bonds,ETF,US tax-exempt municipal bonds
+IGOV,USD,core,bonds,ETF,International government bonds
+BWX,USD,extended,bonds,ETF,International Treasury bonds
+IAU,USD,core,precious-metals,ETF,Allocated gold bullion
+BAR,USD,core,precious-metals,ETF,Allocated gold bullion
+SIVR,USD,core,precious-metals,ETF,Allocated silver bullion
+PPLT,USD,extended,precious-metals,ETF,Allocated platinum bullion
+PALL,USD,extended,precious-metals,ETF,Allocated palladium bullion
+CPER,USD,core,commodities,ETF,Copper futures
+DBB,USD,extended,commodities,ETF,Industrial metals futures
+COPX,USD,core,commodities,ETF,Global copper miners
+PICK,USD,extended,commodities,ETF,Global metals and mining producers
+URNM,USD,extended,commodities,ETF,Uranium miners
+LIT,USD,extended,commodities,ETF,Lithium and battery technology equities
+REMX,USD,extended,commodities,ETF,Rare-earth and strategic-metals equities
+KRBN,USD,extended,alternatives,ETF,Carbon-credit futures
+GRN,USD,extended,alternatives,ETF,Carbon-credit futures
+KMLM,USD,core,alternatives,ETF,Managed-futures trend following
+WTMF,USD,extended,alternatives,ETF,Managed-futures trend following
+BTAL,USD,core,alternatives,ETF,Market-neutral anti-beta equities
+TAIL,USD,extended,alternatives,ETF,Tail-risk hedging strategy
+RLY,USD,extended,alternatives,ETF,Multi-asset real-return strategy
+IGF,USD,core,real-assets,ETF,Global infrastructure equities
+IFRA,USD,extended,real-assets,ETF,US infrastructure equities
+REET,USD,core,real-estate,ETF,Global real-estate equities
+REM,USD,extended,real-estate,ETF,Mortgage real-estate investment trusts
+IBIT,USD,existing,crypto,ETF,Spot Bitcoin exposure already present
+FBTC,USD,core,crypto,ETF,Spot Bitcoin exposure
+BITB,USD,core,crypto,ETF,Spot Bitcoin exposure
+ARKB,USD,extended,crypto,ETF,Spot Bitcoin exposure
+EZBC,USD,extended,crypto,ETF,Spot Bitcoin exposure
+HODL,USD,extended,crypto,ETF,Spot Bitcoin exposure
+ETHA,USD,core,crypto,ETF,Spot Ether exposure
+FETH,USD,extended,crypto,ETF,Spot Ether exposure
+SXR8.DE,EUR,core,developed-equity,ETF,S&P 500 UCITS equities
+EUNL.DE,EUR,core,developed-equity,ETF,MSCI World UCITS equities
+IS3S.DE,EUR,core,factor,ETF,MSCI World small-cap UCITS equities
+EXSA.DE,EUR,extended,developed-equity,ETF,MSCI Europe UCITS equities
+EXV1.DE,EUR,extended,developed-equity,ETF,Euro Stoxx 50 UCITS equities
+IUSN.L,EUR,core,factor,ETF,MSCI World small-cap UCITS equities
+IWFQ.L,EUR,extended,factor,ETF,MSCI World quality-factor UCITS equities
+IWVL.L,EUR,extended,factor,ETF,MSCI World value-factor UCITS equities
+IWMO.L,EUR,extended,factor,ETF,MSCI World momentum-factor UCITS equities
+EIMI.AS,EUR,core,emerging-markets,ETF,Core MSCI emerging-markets UCITS equities
+IEMA.AS,EUR,extended,emerging-markets,ETF,MSCI emerging-markets UCITS equities
+IS3N.DE,EUR,extended,emerging-markets,ETF,MSCI emerging-markets small-cap UCITS equities
+IDIN.AS,EUR,core,single-country,ETF,India UCITS equities
+IJPA.L,EUR,core,single-country,ETF,Japan UCITS equities
+IBGL.L,EUR,core,bonds,ETF,Global aggregate bonds EUR-hedged UCITS
+IEAC.AS,EUR,core,bonds,ETF,EUR corporate bonds UCITS
+IHYG.L,EUR,core,bonds,ETF,EUR high-yield corporate bonds UCITS
+IBTE.L,EUR,extended,bonds,ETF,EUR government bonds UCITS
+VETY.L,EUR,extended,bonds,ETF,EUR inflation-linked government bonds UCITS
+4GLD.DE,EUR,core,precious-metals,ETC,Physical gold ETC
+4GLD,EUR,extended,precious-metals,ETC,Physical gold ETC alternate listing
+ZGLD.DE,EUR,extended,precious-metals,ETC,Physical gold ETC
+XAD1.DE,EUR,core,precious-metals,ETC,Physical gold ETC
+XGSD.DE,EUR,core,precious-metals,ETC,Physical silver ETC
+XPTX.DE,EUR,extended,precious-metals,ETC,Physical platinum ETC
+XPDX.DE,EUR,extended,precious-metals,ETC,Physical palladium ETC
+BTCE.DE,EUR,core,crypto,ETP,Bitcoin exchange-traded product
+ABTC.DE,EUR,extended,crypto,ETP,Bitcoin exchange-traded product
+AETH.DE,EUR,extended,crypto,ETP,Ether exchange-traded product
+V3AA.DE,EUR,extended,developed-equity,ETF,Global all-cap ESG UCITS equities

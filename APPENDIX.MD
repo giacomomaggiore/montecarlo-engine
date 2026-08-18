@@ -1,32 +1,44 @@
-# Appendix: Guide for the Project
+# Montecarlo engine for portfolio allocation | Boring Technicalities
 
-Lecture notes for designing, validating, and explaining the simulator.
+The following notes are the starting point for designing, validating and explaining the Montecarlo engine for portfolio allocation.
 
-- **Accounting identities** — must hold exactly, given the stated conventions.
-- **Statistical assumptions** — estimated, uncertain, and potentially wrong.
+Educational material only: not a financial advice.
 
-Educational material only — not investment, tax, or legal advice.
+_If you have any doubt or you spot any error, please contact me!_
 
 ### Notation and Conventions
+
+During the project and the following notes, we will use the following notation (trying to keep it as lean as possible):
 
 - Time: $t=0,1,\ldots,T$
 - Assets: $i=1,\ldots,A$
 - Paths: $j=1,\ldots,N$
 - Returns are periodic. All values are nominal, base-currency. Vectors are columns.
 
-**Per-period order:** apply returns and debt interest → add end-of-period contribution → forced margin action → rebalance → record the period.
+Furthermore, we follow a **per-period order ** logic, so each period:
+- apply asset returns and debt interest 
+- calculate and invest the end-of-period contribution
+- check margin and, if needed, deleverage 
+- rebalance and apply a voluntary leverage reset if due 
+- record the period. 
+
+Costs and tax are charged when orders execute. At the end of the final period, the portfolio is liquidated once (and the relevant capital-gain taxes are paid).
 
 A model is valid only relative to these explicit conventions.
+
+---
 
 ## Financial Foundations
 
 ### Simple and Log Returns
 
+Given a price $P_t$ level, we compute simple returns as:
+
 $$
 r_t = \frac{P_t}{P_{t-1}} - 1
 $$
 
-- $P_t$ must be a total-return price or adjusted close (dividends and splits already included).
+- note that $P_t$ must be a total-return price or adjusted close (dividends and splits already included).
 
 Portfolio value evolves as:
 
@@ -34,7 +46,7 @@ $$
 V_t = V_{t-1}(1 + r_t)
 $$
 
-Log return:
+Similarly, we compute log returns as:
 
 $$
 \ell_t = \log(1 + r_t)
@@ -42,7 +54,7 @@ $$
 
 - Log returns **add** over time. Simple returns **compound** value directly.
 - The Student's $t$ engine models log returns, then converts back: $r_t = e^{\ell_t} - 1$.
-- This conversion guarantees $r_t > -100\%$ — a long-only asset cannot lose more than its full value.
+- This conversion guarantees $r_t > -100\%$ as a long-only asset cannot lose more than its full value.
 
 Over $T$ periods:
 
@@ -50,22 +62,28 @@ $$
 \log(V_T/V_0)=\sum_{t=1}^{T}\ell_t \qquad\text{vs.}\qquad \prod_{t=1}^{T}(1+r_t)-1
 $$
 
-- Not interchangeable averages: the geometric mean is generally below the arithmetic mean, because volatility creates a compounding drag.
+Note that these averages are not interchangeable metrics: <b>the geometric mean is generally below the arithmetic mean</b>, because volatility creates a compounding drag.
+
+---
 
 ### Unleveraged Portfolio
+
+A portfolio with weights $w_i$ and assets with returns $r_i$ has total return of:
 
 $$
 r_{p,t} = \sum_{i=1}^{n} w_{i,t-1} r_{i,t}
 $$
 
-- Weights drift after returns apply. Rebalancing needs the value and quantity of each position tracked directly — it cannot be reduced to one weighted-return formula.
-- Pre-trade dollar value: $x_{i,t}^{-}=x_{i,t-1}(1+r_{i,t})$, and $V_t^{-}=\sum_i x_{i,t}^{-}$.
+- Weights drift after returns apply. Therefore, rebalancing needs the value and quantity of each position tracked directly and it cannot be reduced to one weighted-return formula.
+- Pre-trade dollar value: 
+$$ x_{i,t}^{-}=x_{i,t-1}(1+r_{i,t})\\ V_t^{-}=\sum_i x_{i,t}^{-} $$
 - Realised pre-trade weight: $x_{i,t}^{-}/V_t^{-}$.
-- This state-based (value-and-quantity) view is the correct starting point for rebalancing, proportional trading costs, average cost basis, and leverage.
+
+This state-based _(value-and-quantity)_ view is the correct starting point for rebalancing, proportional trading costs, average cost basis, and leverage.
 
 ### Leveraged Portfolio
 
-Definitions, used consistently throughout:
+The following definitions define the starting point for leveraged investing:
 
 $$
 \text{equity} = \text{gross asset value} - \text{debt}
@@ -79,9 +97,9 @@ $$
 \text{maintenance margin} = \frac{\text{equity}}{\text{gross asset value}}
 $$
 
-- Target leverage $L$ → initial maintenance ratio $1/L$.
-- With maintenance requirement $m$: valid range is $1\le L\le\min(4,1/m)$.
-- At $L=1/m$ exactly: **no buffer**. A small loss, interest charge, or transaction cost can trigger a margin call.
+Furthermore, given a target leverage $L$, the initial maintenance ratio $1/L$. In this simplified model, we assume that the maintenance requirement $m$ lies in the range  $1\le L\le\min(4,1/m)$.
+
+Note that, at the boundary $L=1/m$ exactly, a small loss, interest charge, or transaction cost can trigger a margin call.
 
 One-period behaviour: gross assets $G$, debt $D$, asset return $r$ before interest, borrowing rate $i_d$:
 
@@ -92,16 +110,30 @@ $$
 - Leverage magnifies both gains and losses, because the debt claim is fixed over the period.
 - This approximation becomes an exact accounting identity once interest timing, trades, taxes, and costs are specified in the engine.
 
+With weekly sampled short rate $r_{f,t}$ (for USD we use the Effective Federal Funds Rate, available on <a href="https://www.newyorkfed.org/markets/reference-rates/effr" target="_blank">FED website </a>) and annual effective borrowing spread $s_a$:
+
+$$
+s_w=(1+s_a)^{1/52}-1, \qquad D_t^-=D_{t-1}(1+r_{f,t}+s_w)
+$$
+
+- Debt interest accrues before the contribution and before the maintenance test.
+- A margin call occurs only when $E/G<m$, not at equality. The engine searches for the smallest proportional sale that restores target leverage after fees and tax.
+- Net sale proceeds repay debt. They never become an unmodelled cash balance.
+- If no feasible sale can restore the rule, or final liquidation cannot repay debt, the path is **insolvent**. It has terminal wealth $0$ and counts toward ruin probability.
+- A malformed computation or non-finite value is a different kind of failure. It is stored as `NaN`, not quietly counted as economic ruin.
+
+---
+
 ### Contributions and Cash Flows
 
 - Recurring contributions are added at the **end** of each period. They do **not** earn that period's return.
 - This convention must be identical in tests, the engine, and the charts.
 
-A high terminal value with recurring contributions does **not** imply a high investment return:
+A high terminal value with recurring contributions does **not** imply a high investment return, therefore, we use different return metrics to evaluate different strategies:
 
-- Use **CAGR** only for an initial investment with no later cash flows.
-- Use **IRR / money-weighted return** when contributions occur.
-- Use a **cash-flow-neutral** portfolio return series for volatility, Sharpe ratio, and drawdown.
+- we prefer **CAGR** only for an initial investment with no later cash flows.
+- we prefer **IRR / money-weighted return** when contributions occur.
+- we use a **cash-flow-neutral** portfolio return series for volatility, Sharpe ratio, and drawdown.
 
 Money-weighted return $q$, for dated cash flows $C_t$ (positive when paid by the investor) and terminal value $W_T$, solves:
 
@@ -109,20 +141,40 @@ $$
 0=-C_0-\sum_{t=1}^{T} \frac{C_t}{(1+q)^t}+\frac{W_T}{(1+q)^T}
 $$
 
-- This is an IRR equation — not guaranteed to have one unique solution. Non-conventional cash-flow signs can create multiple roots, or none economically meaningful.
-- The app must **report** this limitation rather than silently pick an arbitrary root.
+Note that this is an IRR equation, so it is not guaranteed to have one unique solution. Non-conventional cash-flow signs can create multiple roots or solutions that are not economically meaningful.
+
+---
 
 ### Taxation, Cost Basis, and Costs
 
-Educational simplification, not tax advice:
+Again, this is not a tax advice. Note that the model assumes an average cost basis, _(at least for the moment)_ it doesn't assume a LIFO or FIFO tax framework.
 
 - Each asset has an **average cost basis**.
-- A sale realizes $\text{proceeds} - \text{basis sold}$.
-- Realized losses offset later realized gains **in the same path**, with no tax refunds.
-- Purchase costs increase basis; sale costs reduce proceeds.
-- Final liquidation sells everything and settles remaining taxes and costs.
+- A sale realizes $\text{net sale proceeds} - \text{basis sold}$. Net proceeds are the sale value less its transaction cost.
+- If an asset holding has market value $H_i$, cost basis $B_i$, and sale value $S_i$ _(as a proportion of the total holding),_ the basis sold is $B_iS_i/H_i$. <br/>The remaining basis is $B_i-B_iS_i/H_i$.
+- Realized losses create one loss carryforward for the whole path. It offsets later realized gains from any asset in that same path. The model gives no tax refund for unused losses.
+- A buy cost increases basis. A sale cost reduces proceeds before the gain or loss is measured.
+- The opening investment has no order cost. Its basis defaults to the invested amount, or to an optional user-entered aggregate basis, split by target weight. With leverage, opening basis is the full gross purchase value, including borrowed capital.
+- A gross contribution stays the investor's cash flow even when some of it pays order costs. This keeps IRR, loss probability, and the benchmark comparison from treating fees as missing deposits.
+- Rebalancing sells execute before buys. After sale costs and immediate tax, the remaining proceeds fund a scaled buy leg. Friction can therefore leave weights near, rather than exactly at, target.
+- Final liquidation sells every remaining holding once, charges its costs and tax, then uses the remaining proceeds to repay debt. The residual is after-liquidation terminal wealth.
 
-Related topics: realized vs. unrealized gains, FIFO vs. average cost, tax-loss harvesting, and this model's limitations.
+---
+
+### Benchmark Comparison
+
+The optional benchmark is a separate $1\times$ buy-and-hold account. It answers a narrow paired question: what would one chosen ETF have produced if it received the investor's actual cash flows on the same simulated dates?
+
+$$
+B_t^- = B_{t-1}(1+r_{b,t}), \qquad B_t=B_t^-+C_t
+$$
+
+- $C_t$ is the contribution calculated from the portfolio, not from the benchmark. This matters for value averaging because contributions differ across simulated paths.
+- The benchmark shares the same sampled historical row or the same parametric joint shock as the portfolio. It is not driven by a second random engine.
+- It is frictionless and unlevered: no rebalancing, costs, tax, borrowing, debt, or margin calls.
+- Compare only paths where both terminal values are finite.<br/>For each comparable path, $\Delta W_T=W_T^{\text{portfolio}}-W_T^{\text{benchmark}}$.
+
+---
 
 ### Inflation and Base Currency
 
@@ -133,12 +185,16 @@ $$
 V_t^{\text{real}} = \frac{V_t^{\text{nominal}}}{I_t / I_0}
 $$
 
-- USD portfolio → USD-converted returns, US CPI, USD short rate.
-- EUR portfolio → EUR-converted returns, HICP, EUR short rate.
-- Mixing local-currency returns without FX conversion is financially inconsistent.
+- for a USD portfolio, we use USD-converted returns, US CPI, USD short rate.
+- for a EUR portfolio, we use EUR-converted returns, HICP, EUR short rate.
+- note that we never mix local-currency returns without FX conversion, as it is financially inconsistent.
 
 - Inflation adjustment changes *purchasing-power interpretation*, not the nominal cash ledger.
-- Exact real simple return: $(1+r_t)/(1+\pi_t)-1$ — **not** $r_t-\pi_t$, which is only a first-order approximation.
+- Exact real simple return: $(1+r_t)/(1+\pi_t)-1$, **not** $r_t-\pi_t$, which is only a first-order approximation.
+
+As a general rule for the model, a currency is available only when the return matrix, inflation series, short-rate series, FX provenance, manifest, catalogue, and browser-side integrity checks are complete. The current USD releases meet this rule. EUR does not yet meet it.
+
+---
 
 ### Foreign-Exchange Conversion and Currency Hedging Theory
 
@@ -246,12 +302,15 @@ $$
 
 **Why this needs a version note:** two different interpolation rules give two different weekly series from the *same* monthly data. Neither is "wrong" (both reproduce the monthly figure), but results under different rules aren't directly comparable.
 
+**Current USD data rule.** Monthly USD uses the source CPI log change directly. Weekly USD spreads that log change equally over the weekly rows in the same calendar month. A missing source CPI observation remains missing; the browser removes that row when it aligns a selected portfolio. It does not forward-fill inflation just to preserve a continuous date range.
+
 ## 2. Probability, Statistics, and Estimation
 
 ### Probability Distributions and Their Moments
 
-- A **random variable** $X$ is described by a cumulative distribution function $F(x)=\Pr(X\le x)$, and — when it exists — a density (continuous) or mass (discrete) function $f$, with $F(x)=\int_{-\infty}^{x}f(u)\,du$ or $F(x)=\sum_{u\le x}f(u)$.
-- The **quantile function** $F^{-1}$ inverts $F$. Every inverse-transform construction in this document — the bootstrap's implicit resampling of the empirical CDF, the copula's $r_i=F_i^{-1}(U_i)$ (§3), the percentile bands themselves (below) — is $F^{-1}$ applied to a uniform draw, in one guise or another.
+- A **random variable** $X$ has a cumulative distribution function $F(x)=\Pr(X\le x)$. It gives the chance that $X$ is no larger than $x$.
+- A continuous variable can also have a density $f$, where $F(x)=\int_{-\infty}^{x}f(u)\,du$. A discrete variable has probability masses, where $F(x)=\sum_{u\le x}f(u)$.
+- The **quantile function** $F^{-1}$ maps a probability back to a value. Bootstrap sampling, percentile calculation, and future copula models all use this idea in different forms.
 
 **Moments.** For raw moment order $k$: $E[X^k]$. Centering first, then standardizing, gives the four moments actually used in this project:
 
@@ -453,17 +512,17 @@ $$
 
 - Idea: a non-PSD matrix is "PSD except along a few bad directions" — zero out just those.
 
-**Step 2 — project onto the unit-diagonal set.** Reset the diagonal to 1; trivial, but it re-breaks PSD-ness.
+**Step 2 — restore the unit diagonal.** Set every diagonal entry to 1. This can break PSD-ness again.
 
-**Step 3 — alternate, with Dykstra's correction.** Plain alternation converges slowly, to *some* point in the intersection — not necessarily the nearest one. Dykstra's correction tracks an auxiliary term, subtracted and re-added around each PSD projection, and provably converges to the true Frobenius-nearest matrix. Iterate to a documented tolerance.
+**Step 3 — repeat with Dykstra's correction.** Repeat the two projections. The correction term makes the result converge to the Frobenius-nearest matrix in their intersection, rather than an arbitrary valid matrix.
 
 - The implementation declares convergence when the largest absolute elementwise change across a full iteration is below $10^{-10}$, and returns a structured failure after 200 iterations rather than passing on an unconverged matrix.
 
-**Restoring variances.** Repair runs on the *correlation* matrix (unit diagonal makes the projection trivial). Set aside $s_1,\ldots,s_A$ beforehand; reapply via $\Sigma_{\text{repaired}} = D R_{\text{repaired}} D$. Guarantees only the correlation structure changes — each asset's fitted variance is untouched.
+**Restore variances.** Repair the correlation matrix, then rebuild covariance as $\Sigma_{\text{repaired}} = D R_{\text{repaired}} D$. This changes dependence but keeps each fitted asset variance.
 
 **Cost.** One eigendecomposition per iteration, $O(A^3)$. For $A\le6$: negligible against the $O(N\times T\times A^2)$ scenario cost. A one-time setup cost, not a per-scenario one.
 
-**A cheaper, cruder alternative.** Eigenvalue-clipping without Dykstra's correction: one pass, cheap, but not the exact Frobenius-nearest solution. Gives a visibly different result when the input is far from PSD — log which method is used.
+**Cheaper alternative.** One-pass eigenvalue clipping is faster, but it is not the exact nearest-correlation solution. Record the method if it is ever used.
 
 ### Cholesky Decomposition, in Detail
 
@@ -963,6 +1022,14 @@ $$
 - Must use a **unitized index**, not a raw value series — otherwise a contribution can look like a market recovery.
 - $u_0=1$, $u_t=u_{t-1}(1+r_{p,t}^{\mathrm{neutral}})$ (the neutral return excludes external cash flows). Maximum drawdown $=\min_t DD_t$ — measures **depth**, not duration or recovery time.
 
+### Terminal Wealth, CAGR, and IRR
+
+- Terminal wealth is the portfolio value **after** the model's final liquidation, including final sale costs, tax, and debt repayment where relevant.
+- With only the initial investment, CAGR is $\left(W_T/C_0\right)^{1/\text{years}}-1$.
+- With later contributions, the app reports a money-weighted IRR when a finite admissible root exists. It reports `N/A` rather than selecting one arbitrary root when the cash-flow equation is not well-defined.
+- Loss probability is the share of paths where terminal wealth is below that path's total external contributions. It is not the same thing as insolvency.
+- Ruin probability is the share of all configured paths marked insolvent. Non-finite software or data failures are visible failures, not economic ruin.
+
 ### Sharpe Ratio
 
 $$
@@ -988,7 +1055,14 @@ $$
 $$
 
 - Both inherit every assumption in the data, calibration, and simulation engine — model-dependent estimates, not objective probabilities.
-- A percentile fan chart shows a cross-sectional distribution *per horizon*, not any one investor's actual trajectory.
+- Tail statistics are useful summaries, but they are conditional on the data window, fitted model, and simulation settings. They are not objective probabilities of future loss.
+
+### Representative Paths and Percentiles
+
+- The chart draws seven real paths selected by terminal-wealth level: p1, p10, p25, p50, p75, p90, and p99.
+- For each level, the app calculates the terminal quantile with its versioned linear-interpolation rule, then selects the actual path whose terminal wealth is nearest to that value.
+- This is not a per-period percentile band. A representative p10 path can be above a representative p90 path during part of the horizon because they are separate real paths selected only by their final values.
+- Metric summaries use the same linear quantile rule. The current summaries use p01, p10, p50, p90, and p99 where a metric is defined.
 
 ## 6. Browser Software Engineering
 
@@ -1021,11 +1095,11 @@ Keep separate:
 
 - valid configuration **or** validation errors;
 - current run ID;
-- status: `idle` / `running` / `completed` / `cancelled` / `failed`;
+- status: `idle` / `loading-data` / `running` / `completed` / `cancelled` / `failed`;
 - progress, and the most recent completed result.
 
 - Input change mid-run → terminate the worker, ignore stale-run-ID messages.
-- Update charts once per batch, not once per path.
+- Batches publish progress. The chart is rendered from the completed result, not redrawn for every path or batch.
 
 ### Web Workers and Buffer Transfer
 
@@ -1039,66 +1113,69 @@ A worker prevents main-thread blocking — it doesn't make computation free:
 
 ### Static Data and Caching
 
-- `fetch`, `ArrayBuffer`, `DataView`, `Cache-Control`, Brotli/gzip compression, browser caching.
-- Manifest: small, loaded immediately. Return matrix: loaded only after frequency and currency are chosen.
-- No Parquet parser in v1 — a `Float32` binary file's simple, known schema doesn't justify the added complexity.
+- A release contains a small manifest, an asset catalogue, and a little-endian column-major `Float32` matrix.
+- The browser first validates strict JSON schema, release identity, safe matrix filename, byte length, and SHA-256 checksum. Only then does it create zero-copy typed-array views for selected columns.
+- The matrix may contain `NaN` before inception or at a genuine source gap. The loader keeps only dates finite across the chosen holdings, inflation, and short-rate columns. It then applies the 260-week or 60-month minimum.
+- Artifacts are cached by frequency and base currency for the browser session. A failed request is not cached permanently, so retry remains possible.
+- Current releases are `weekly:USD` and `monthly:USD`. No EUR release is available yet.
+- No Parquet parser is used: this binary layout is small, deterministic, and easy to validate in the browser.
 
 ### Charts with uPlot
 
-- Percentiles plus at most 50 individual paths only.
+- Seven terminal-quantile representative paths, plus a selectable retained sample of at most 50 paths.
 - One chart, not one per simulation.
 - Stable container dimensions.
 - Update per batch, not per point.
 - Leverage ratio shown only when leverage is active.
+- Real display divides nominal values by each path's own cumulative inflation index. Nominal accounting itself never changes.
 
 ### In Plain Language: How the Pieces Fit Together (No Programming Background Required)
 
 **Why a separate "Web Worker" exists.**
 
-- A browser tab normally does everything — drawing the page, handling clicks, running calculations — one thing at a time.
-- A heavy calculation run there freezes the whole page: no scroll, no click, no feedback.
-- A Web Worker is like hiring a second assistant in a separate room. The simulation runs there; the front-of-house (page rendering, clicks) stays free.
-- The two rooms only communicate by passing notes (`postMessage`). The back room can't touch the screen directly — only report results or progress back.
+- The browser main thread draws the page, handles clicks, and runs JavaScript.
+- A large simulation on that thread would freeze the interface.
+- A Web Worker runs the simulation on a separate thread. The main thread stays responsive.
+- The Worker and page exchange messages with `postMessage`. The Worker cannot update the DOM or React directly.
 
 **Handing over data vs. copying it.**
 
-- Passing a huge stack of numbers normally means photocopying it — slow, and briefly doubles memory use.
-- A "transfer list" hands over the *original* stack instead — instant, regardless of size — but the sender genuinely loses its own copy afterward.
-- This project hands over the large per-path result buffers rather than copying them, because copying every run would be needlessly slow.
+- A normal `postMessage` copies a buffer. That costs time and briefly uses two copies of the memory.
+- A transfer list moves the original buffer instead. The sender can no longer use that buffer.
+- The Worker transfers large result buffers to avoid an unnecessary copy.
 
 **Changing a setting mid-calculation.**
 
-- A long, uninterruptible calculation can't be tapped on the shoulder mid-way.
-- Instead: fire the old assistant, hire a new one, and tag every request with a unique ticket number.
-- If the fired assistant's result arrives late anyway, the front desk checks the ticket, sees it's stale, and throws it away — like ignoring a callback for an order you already changed.
+- The simulation loop cannot safely stop halfway through one synchronous block of work.
+- Cancel terminates the active Worker. Starting another run creates a new Worker and a new run ID.
+- The page ignores a message whose run ID does not match the active run. A late result cannot overwrite a newer result.
 
 **Why some settings are a fixed "menu," not a free-form form.**
 
-- Three contribution styles (lump sum / DCA / value averaging) each need different extra information.
-- Instead of one form with a grab-bag of optional boxes (which could be filled in contradictory combinations), the code defines three separate, labeled, mutually exclusive "shapes" — you must say which one before its details can even be read.
-- Enforced by the language itself: a whole category of contradictory configurations becomes *impossible to construct*, everywhere, automatically — not just "checked and rejected later."
+- Lump sum, DCA, and value averaging need different fields.
+- The code represents them as separate, mutually exclusive configurations.
+- A configuration can therefore contain only the fields required by its selected mode. Contradictory combinations do not reach the accounting code.
 
 **Why answers come back in one of two labeled "envelopes."**
 
-- Every check — data file valid? inputs valid? simulation succeeded? — answers with a "green envelope" (a confirmed, safe value) or a "red envelope" (an itemized list of what's wrong).
-- Critical rule: never silently guess a plausible-looking substitute when something's actually wrong. A wrong-but-plausible number is more dangerous than a visible error, because someone might act on the wrong number.
-- Same two-envelope shape everywhere — learn it once, use it everywhere.
+- Validation returns either a checked value or a list of structured errors.
+- Invalid input is never replaced with a plausible default value.
+- The same result shape is used for data, configuration, and simulation checks.
 
 **Where the historical price data comes from.**
 
-- Think of it as a cookbook of past weekly results, prepared once, offline, before the "storefront" (the live site) opens — in a separate Python `pipeline/` folder, never in the browser.
-- Raw prices start as ordinary spreadsheets (CSVs). What ships to the browser is a small, tightly packed binary file — a plain list of numbers, no labels or formatting — far smaller to download.
-- A small "manifest" file alongside it describes how to read the numbers back correctly: which asset, which date, and a checksum (a numeric fingerprint) that catches a corrupted or partial download before it's used.
-- Locked and versioned once published → every visitor simulates against the *exact same* checked dataset.
-- This is why every result records its exact dataset version alongside the random seed: reproducing a result later needs both the calculation *and* the exact data version it ran on — like a recipe depends on the exact batch of ingredients used.
+- The offline Python pipeline converts source CSV files into released data artifacts.
+- The browser receives a compact binary return matrix, not raw price files.
+- A manifest describes the column order, dates, dimensions, and checksum. The browser checks it before simulation.
+- Each release is versioned. A reproducible result needs the same data version, checksum, model version, configuration, and seed.
 
 **How the project checks its own numbers are correct.**
 
-- **Layer 1 — hand-calculated tests.** Work out a tiny example by hand, check the program matches exactly — like checking a calculator against pencil-and-paper on an easy case.
-- **Layer 2 — statistical tests.** For the random (Monte Carlo) parts, you can't demand one exact number every run — instead, check that *averages over many runs* land close to theory, within pre-agreed wiggle room (never loosened after a failure). Not getting exactly 50/100 coin flips isn't "wrong"; getting 95/100 would be.
-- **Layer 3 — independent cross-check (the strongest).** Build a *second*, separate version of the core logic, in a different language, from the plain-English rules only — not by reading the original code. Run both from the same numbers; results must match exactly.
-  - One subtlety: because the historical numbers are stored in a less-precise format to save space, *both* versions must round to that same precision first, or they'd "disagree" for a fake reason.
-  - Why this matters: "the code agrees with itself" is weaker evidence than "two independently-built systems, from the same spec, agree with each other." The second proves the *written rules* were actually clear and correctly understood.
+- **Layer 1 — hand-calculated tests.** A small example has a known answer and checks the accounting rule exactly.
+- **Layer 2 — statistical tests.** Random output is checked against a pre-set sample size and tolerance. The tolerance is not widened after a failure.
+- **Layer 3 — independent cross-check.** A separate implementation, written in another language from the stated rules, must match the period-by-period trace.
+  - Both implementations must use the same Float32 input rounding. Otherwise they may disagree only because the released data has a different precision than the test fixture.
+  - This checks the specification as well as the code. Two implementations can expose an ambiguity that one implementation alone cannot see.
 
 ## 7. Computational Cost and Memory
 
@@ -1130,17 +1207,19 @@ Since $A$ is capped small by design, $O(N\times T)$ always dominates real runnin
 Total work is $O(N\times T)$. Retained memory is deliberately much smaller:
 
 - Terminal metrics: $O(N)$.
-- Five quantile series: $O(T)$ — doesn't grow with $N$ (computed and discarded per period).
-- Full detail for 50 retained paths: $O(T)$ (a fixed multiplier).
+- Terminal outcomes and paired benchmark outcomes: $O(N)$.
+- Representative-path selection: $O(N)$ terminal values plus a sort; it retains only seven full paths.
+- Full audit detail for at most 50 retained paths: $O(T)$ with a fixed path multiplier.
 
 Total realized memory: $O(N+T)$, not $O(N\times T)$ — a deliberate, load-bearing design choice.
 
-- The flat `Float64Array` of per-path equity (up to ~80 MB) is a transient scratchpad during computation, not what's kept.
+- The flat `Float64Array` of per-path equity (up to about 80 MB) is transient scratch space. It supports metrics and representative-path selection, then only bounded result buffers cross the Worker boundary.
 - If holdings, debt, and cost basis were *also* retained per path, memory would multiply per quantity, per path — exactly why the 50-path cap is a hard rule.
 
 ### Batching Changes Responsiveness, Not the Complexity Class
 
-- Splitting $O(N\times T)$ work into batches doesn't change the total work — it changes *when* progress updates and cancellation become possible.
+- Splitting $O(N\times T)$ work into batches does not change total work. It changes when progress messages are sent.
+- Cancellation is a hard Worker termination, not a cooperative check at a batch boundary.
 - "How much total compute" (algorithmic) and "how responsive does it feel" (UX/scheduling) are different questions. Optimizing one doesn't automatically fix the other.
 
 ### Project Budget
@@ -1185,6 +1264,9 @@ Small inputs, fixed seed, hand-calculable results:
 - fixed and percentage costs;
 - debt interest;
 - margin call, deleveraging, insolvency;
+- benchmark cash-flow identity, including path-specific value-averaging contributions;
+- final liquidation, debt settlement, and the difference between insolvency and a malformed failure;
+- CSV escaping, formula-safe text cells, and one terminal-outcome row per configured path;
 - aligned bootstrap rows;
 - reproducibility with the same seed;
 - a Higham-repaired matrix and valid Cholesky decomposition.
@@ -1227,6 +1309,27 @@ Three layers:
 - **External validation** — is model behavior plausible on data not used for calibration?
 
 Passing the first two does **not** establish forecasting ability.
+
+### Reproducible Audit Trail
+
+Each completed result records the dataset version and checksum, frequency, base currency, engine and PRNG versions, quantile and metric versions, full configuration, and seed. CSV export has four separate tables:
+
+- run metadata and completed settings;
+- metric summaries;
+- all-path terminal outcomes, including failure status;
+- bounded period detail for retained paths only.
+
+The exports use empty cells for unavailable numeric values. They preserve terminal zero for insolvency, so a real economic wipeout is not confused with an operational `NaN` failure. Text cells are escaped for RFC 4180 CSV and protected against spreadsheet formula interpretation.
+
+Exports are generated only from the immutable completed result. They do not rerun the simulation, refetch data, or read settings that the user has changed for the next run.
+
+### Implemented Metric Summaries
+
+The app summarizes each defined per-path metric across simulated paths. These include terminal wealth, CAGR or IRR, volatility, Sharpe ratio, maximum drawdown, transaction costs, realised gain/loss, tax paid, remaining loss carryforward, borrowing interest, and paired benchmark terminal difference. It also reports loss probability, ruin probability, margin-call incidence, benchmark outperformance probability, and the number of comparable benchmark paths.
+
+- The on-screen summary uses p01, p10, p50, p90, and p99 where a distribution applies.
+- The CSV metric table also includes p25 and p75 for export analysis.
+- A metric is `N/A` when its mathematical definition is not met, such as a zero excess-return standard deviation for Sharpe or no admissible IRR root. It is not replaced with zero.
 
 ## 9. Recommended Learning Sequence
 

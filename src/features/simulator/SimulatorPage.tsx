@@ -116,20 +116,22 @@ export function SimulatorPage() {
 
       {catalogue !== null && catalogue.ok && (
         <div className="input-workspace">
-          <PortfolioConstruction
-            assets={catalogueAssets}
-            benchmarkAssetId={inputs.benchmarkAssetId}
-            dispatch={dispatch}
-            errors={inputErrors}
-            holdings={inputs.holdings}
-          />
           <div className="input-column">
+            <PortfolioConstruction
+              assets={catalogueAssets}
+              benchmarkAssetId={inputs.benchmarkAssetId}
+              dispatch={dispatch}
+              errors={inputErrors}
+              holdings={inputs.holdings}
+            />
             <SimulationInputs
               assets={catalogueAssets}
               dispatch={dispatch}
               errors={inputErrors}
               inputs={inputs}
             />
+          </div>
+          <div className="input-column">
             <PortfolioSettings
               dispatch={dispatch}
               errors={inputErrors}

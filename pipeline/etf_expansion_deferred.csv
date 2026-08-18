@@ -1,0 +1,12 @@
+ticker,market,exposure_group,reason,next_step
+AETH.DE,EUR,crypto,Yahoo resolved it as a currency-less mutual-fund record rather than the intended Ether ETP.,Find the issuer's current Yahoo suffix before download.
+ABTC.DE,EUR,crypto,Yahoo full-history endpoint returned HTTP 404.,Find the current German listing symbol or use an issuer-approved source.
+EIMI.AS,EUR,emerging-markets,Yahoo full-history endpoint returned HTTP 404.,Use the existing EIMI.MI listing or verify the Amsterdam suffix.
+FM,USD,frontier-markets,The initial lookup resolved but the full-history download returned HTTP 404.,Replace with a currently listed frontier-markets ETF after issuer review.
+IDIN.AS,EUR,single-country,Yahoo full-history endpoint returned HTTP 404.,Find a current EUR-listed India UCITS symbol.
+IUSN.L,EUR,factor,Yahoo full-history endpoint returned HTTP 404.,Use a verified alternate listing or issuer-approved source.
+JPMV,USD,factor,"Yahoo supplied one observation only, so it cannot produce a return series.",Replace with a currently active minimum-volatility or multifactor ETF.
+4GLD,EUR,precious-metals,Yahoo full-history endpoint returned HTTP 404 without an exchange suffix.,Use the verified 4GLD.DE listing.
+XPDX.DE,EUR,precious-metals,Yahoo full-history endpoint returned HTTP 404.,Find the issuer's current physical-palladium ETP listing.
+XPTX.DE,EUR,precious-metals,Yahoo full-history endpoint returned HTTP 404.,Find the issuer's current physical-platinum ETP listing.
+ZGLD.DE,EUR,precious-metals,Yahoo full-history endpoint returned HTTP 404.,Find the issuer's current physical-gold ETC listing.

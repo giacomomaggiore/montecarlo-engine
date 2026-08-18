@@ -1125,3 +1125,25 @@ The intended Eurostat EA20 HICP endpoint could not be downloaded because TLS cer
 - Verified all four raw source files are non-empty.
 - Recomputed and matched all source-file SHA-256 values recorded in `SOURCES.md`.
 - `npm run format`: passed.
+
+## 2026-08-18 - ETF and ETC raw-universe expansion
+
+### Scope completed
+
+- Added `pipeline/etf_expansion_queue.csv`, a 110-symbol curated acquisition queue across factor investing, emerging/frontier markets, country equities, bonds, commodities, precious metals, Bitcoin/Ether products, alternatives, real assets, and EUR-listed UCITS/ETCs.
+- Resolved the queue through the repository's Yahoo chart-API helper, then downloaded 98 valid new adjusted-close histories and appended their observed listing metadata to `pipeline/etf_metadata.csv`.
+- Added `pipeline/etf_expansion_deferred.csv` for 11 candidates withheld after validation, including unavailable Yahoo suffixes, a one-observation history, and a mismatched Ether response.
+- The raw `data/` universe now contains 247 CSV price files. This is raw-source enrichment only: no non-USD asset is present in a released browser dataset without the separate FX-route, return-currency, hedge-treatment, and EUR macro-series gate.
+
+### Acquired coverage
+
+- 80 USD listings: factor sleeves (quality, value, size, dividend, international multifactor), China/India/frontier and country funds, inflation-linked/high-yield/global bonds, metals and commodity exposures, spot Bitcoin/Ether issuers, managed futures, market-neutral alternatives, infrastructure, and real estate.
+- 15 EUR listings: broad developed/emerging UCITS equities, EUR/global bonds, physical gold/silver ETCs, and a Bitcoin ETP.
+- 3 GBP/GBp UCITS listings were retained as raw data because Yahoo reports their actual listing currencies as GBP/GBp; they are not classified as EUR returns merely because they are European listings.
+- Yahoo labels three physical ETC/ETP instruments as `EQUITY`. They are retained as price sources, but the later catalogue must classify their economic exposure and verify provenance rather than relying on Yahoo's instrument type.
+
+### Validation completed
+
+- Every new metadata row has injection date `2026-08-18` and a matching `data/<ticker>.csv` file with header `date,adj close` and at least two price observations.
+- Acquisition breakdown: 98 valid histories, comprising 95 Yahoo `ETF` records and 3 Yahoo `EQUITY` records; observed listing currencies are 80 USD, 15 EUR, 2 GBP, and 1 GBp.
+- Excluded `JPMV` after download because Yahoo provided one price observation only; its raw CSV and metadata row were removed. `FM` failed the full-history endpoint despite resolving in the preliminary lookup. Both remain explicitly documented in the deferred register.
