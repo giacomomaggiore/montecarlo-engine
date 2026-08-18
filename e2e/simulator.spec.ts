@@ -4,14 +4,12 @@ import type { Page } from '@playwright/test'
 // Pick one real released asset, then shrink the otherwise user-facing
 // defaults for a quick deterministic end-to-end smoke run. This is a browser
 // test of the transport path; numerical correctness stays in core unit tests.
-async function configureSmallBootstrapRun(page: Page) {
+async function configureSmallBootstrapRun(page: Page, ticker = 'SPY') {
   await page.goto('/')
   await expect(page.getByLabel('Search ETFs and assets')).toBeVisible()
 
-  await page.getByLabel('Search ETFs and assets').fill('SPY')
-  await page
-    .getByRole('button', { name: /SPY - State Street SPDR S&P 500 ETF Trust/ })
-    .click()
+  await page.getByLabel('Search ETFs and assets').fill(ticker)
+  await page.getByRole('button', { name: new RegExp(`^${ticker} -`) }).click()
   await page.getByLabel('Simulated paths').fill('10')
   await page.getByLabel('Horizon (years)').fill('1')
 }
@@ -46,6 +44,15 @@ test('runs Bootstrap against the released browser artifacts and renders results'
     .click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toMatch(/terminal-outcomes\.csv$/)
+})
+
+test('selects and runs newly released QUAL from the expanded USD catalogue', async ({
+  page,
+}) => {
+  await configureSmallBootstrapRun(page, 'QUAL')
+  await page.getByRole('button', { name: 'Run' }).click()
+  await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible()
+  await expect(page.getByText(/QUAL/).first()).toBeVisible()
 })
 
 test('runs DCA with transaction costs and capital-gains tax', async ({

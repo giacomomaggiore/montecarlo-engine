@@ -1147,3 +1147,31 @@ The intended Eurostat EA20 HICP endpoint could not be downloaded because TLS cer
 - Every new metadata row has injection date `2026-08-18` and a matching `data/<ticker>.csv` file with header `date,adj close` and at least two price observations.
 - Acquisition breakdown: 98 valid histories, comprising 95 Yahoo `ETF` records and 3 Yahoo `EQUITY` records; observed listing currencies are 80 USD, 15 EUR, 2 GBP, and 1 GBp.
 - Excluded `JPMV` after download because Yahoo provided one price observation only; its raw CSV and metadata row were removed. `FM` failed the full-history endpoint despite resolving in the preliminary lookup. Both remain explicitly documented in the deferred register.
+
+## 2026-08-18 - Promoted USD ETF expansion into released datasets
+
+### Scope completed
+
+- Regenerated `pipeline/metadata/assets.csv` from the expanded Yahoo metadata. The USD catalogue grew from 98 to 178 assets: the 80 newly downloaded USD-quoted instruments are now eligible for both live simulation engines.
+- Rebuilt the browser-facing weekly and monthly USD artifacts. The ETF picker, loader, Worker, Bootstrap engine, and parametric Student's $t$ engine use the expanded catalogue without application-code changes because their asset selection is manifest-driven.
+- Added a Playwright smoke test selecting newly added `QUAL` through the real catalogue search and running a released-data Bootstrap simulation. This proves the expansion is not merely present on disk; it is searchable and executable in the browser.
+
+### Release artifacts
+
+- `usd-weekly-v1`: 2,434 rows x 180 columns (178 assets plus CPI inflation and risk-free rate), 1,752,480 bytes, checksum `sha256:59ca29474c0793e4ea085f784ca2d8401bf7c823718cbf161764afbb9f400361`.
+- `usd-monthly-v1`: 560 rows x 180 columns (178 assets plus CPI inflation and risk-free rate), 403,200 bytes, checksum `sha256:403e95039d3a8d4abb28a105a827993a401dd485b9225a399001523148568b6a`.
+- Each asset retains its own available return history in the union-date matrix. At run time, the loader keeps rows jointly finite for the selected holdings, CPI, and risk-free series, then enforces the existing 260-week or 60-month common-history minimum.
+
+### Currency boundary
+
+- EUR and GBP/GBp listings were deliberately not added to either USD release. A quote currency is not enough to determine economic exposure, return currency, hedge treatment, or the FX conversion route.
+- Before these raw candidates can become selectable, the EUR release still needs validated per-asset metadata, FX-route provenance, a release-approved HICP aggregate policy, and a EUR short-rate series. Treating a EUR-listed USD-exposure ETF as a native EUR return would misstate its currency risk.
+
+### Validation completed
+
+- `pipeline/build_assets_catalogue.py`: wrote 178 USD asset records; every record has a matching raw or declared proxy-spliced source and uses USD listing/exposure/return currency in this USD-only release.
+- `pipeline/validate_release.py --frequency weekly --base-currency USD`: passed checksum, dimensions, date ordering, finite-or-NaN policy, and `assets.json`/manifest history consistency.
+- `pipeline/validate_release.py --frequency monthly --base-currency USD`: passed the same independent artifact checks.
+- `npm run test:e2e`: 6 browser tests passed, including the new `QUAL` selection-and-run coverage.
+- `npm test`: 33 files and 272 tests passed.
+- `npm run lint`, `npm run format`, and `npm run build`: passed.

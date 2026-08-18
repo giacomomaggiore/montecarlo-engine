@@ -1,74 +1,149 @@
 ticker,longName
 AAPL,Apple Inc.
 AGG,iShares Core U.S. Aggregate Bond ETF
+ANGL,VanEck Fallen Angel High Yield Bond ETF
+ARGT,Global X MSCI Argentina ETF
+ARKB,ARK 21Shares Bitcoin ETF
+ASHR,Xtrackers Harvest CSI 300 China A-Shares ETF
+AVDV,Avantis International Small Cap Value ETF
+AVES,Avantis Emerging Markets Value ETF
 AVUV,Avantis US Small Cap Value ETF
+BAR,GraniteShares Gold Trust Shares
 BIL,State Street SPDR Bloomberg 1-3 Month T-Bill ETF
+BITB,Bitwise Bitcoin ETF
 BIV,Vanguard Intermediate-Term Bond Index Fund
 BND,Vanguard Total Bond Market Index Fund
 BNDX,Vanguard Total International Bond Index Fund
 BSV,Vanguard Short-Term Bond Index Fund ETF Shares
+BTAL,AGF U.S. Market Neutral Anti-Beta Fund
+BWX,State Street SPDR Bloomberg Int
 CGDV,Capital Group Dividend Value ETF
+COPX,Global X Copper Miners ETF
+CPER,"United States Copper Index Fund, LP"
 CSRSX,Cohen & Steers Realty Shares L
 CTA,Simplify Managed Futures Strategy ETF
+DBB,Invesco DB Base Metals Fund
 DBC,Invesco DB Commodity Index Tracking Fund
 DBMF,iMGP DBi Managed Futures Strategy ETF
 DIA,State Street SPDR Dow Jones Industrial Average ETF Trust
+DISV,Dimensional International Small Cap Value ETF
 EFA,iShares MSCI EAFE ETF
+EFAV,iShares MSCI EAFE Min Vol Factor ETF
+EIDO,iShares MSCI Indonesia ETF
 EMB,iShares J.P. Morgan USD Emerging Markets Bond ETF
 EMLC,VanEck J.P. Morgan EM Local Currency Bond ETF
+EMXC,iShares MSCI Emerging Markets ex China ETF
+EPHE,iShares MSCI Philippines ETF
 ETH,Grayscale Ethereum Mini Trust ETF
+ETHA,iShares Ethereum Trust ETF
+EWH,iShares MSCI Hong Kong ETF
+EWJ,iShares MSCI Japan Index Fund
 EWL,iShares MSCI Switzerland ETF
+EWS,iShares MSCI Singapore ETF
+EWT,iShares MSCI Taiwan ETF
+EWW,iShares MSCI Mexico ETF
+EWY,iShares MSCI South Korea ETF
+EWZ,iShares MSCI Brazil ETF
+EZA,iShares MSCI South Africa ETF
+EZBC,Franklin Bitcoin ETF
 EZU,iShares MSCI Eurozone ETF
+FALN,iShares Fallen Angels USD Bond ETF
+FBTC,Fidelity Wise Origin Bitcoin Fund
+FETH,Fidelity Ethereum Fund
+FLIN,Franklin FTSE India ETF
 FTGC,First Trust Global Tactical Commodity Strategy Fund
 FTLS,First Trust Long/Short Equity ETF
 GLD,SPDR Gold Shares
 GOVT,iShares U.S. Treasury Bond ETF
+GREK,Global X MSCI Greece ETF
+GRN,iPath Series B Carbon ETN
 GSG,iShares S&P GSCI Commodity-Indexed Trust
 HGER,Harbor Commodity All-Weather Strategy ETF
+HODL,VanEck Bitcoin ETF
 HYG,iShares iBoxx $ High Yield Corporate Bond ETF
+HYLB,Xtrackers USD High Yield Corporate Bond ETF
+IAU,iShares Gold Trust
 IBIT,iShares Bitcoin Trust ETF
 ICVT,iShares Convertible Bond ETF
 IEF,iShares 7-10 Year Treasury Bond ETF
 IEFA,iShares Core MSCI EAFE ETF
 IEMG,iShares Core MSCI Emerging Markets ETF
 IEUR,iShares Core MSCI Europe ETF
+IFRA,iShares U.S. Infrastructure ETF
+IGF,iShares Global Infrastructure ETF
 IGLA.L,iShares Global Govt Bond UCITS ETF USD (Acc)
+IGLB,iShares 10+ Year Investment Grade Corporate Bond ETF
+IGOV,iShares International Treasury Bond ETF
 IJH,iShares Core S&P Mid-Cap ETF
+IJPA.L,iShares Core MSCI Japan IMI UCITS ETF USD (Acc)
 IJR,iShares Core S&P Small-Cap ETF
 IJT,iShares S&P Small-Cap 600 Growth ETF
+INDA,iShares MSCI India ETF
 IOO,iShares Global 100 ETF
+IVAL,Alpha Architect International Quantitative Value ETF
 IWM,iShares Russell 2000 ETF
+IWMO.L,iShares Edge MSCI World Momentum Factor UCITS ETF USD (Acc)
 IWR,iShares Russell Mid-Cap ETF
+IWVL.L,iShares Edge MSCI World Value Factor UCITS ETF USD (Acc)
+JNK,State Street SPDR Bloomberg High Yield Bond ETF
+JPIN,JPMorgan Diversified Return International Equity ETF
+JVAL,JPMorgan U.S. Value Factor ETF
+KMLM,KraneShares Mount Lucas Managed Futures Index Strategy ETF
+KRBN,KraneShares Global Carbon ETF
+KSA,iShares MSCI Saudi Arabia ETF
+KWEB,KraneShares CSI China Internet ETF
+LIT,Global X Lithium & Battery Tech ETF
 LTPZ,PIMCO 15+ Year U.S. TIPS Index Exchange-Traded Fund
 MBB,iShares MBS ETF
+MCHI,iShares MSCI China ETF
 MGC,Vanguard Morningstar Mega Cap ETF
 MGK,Vanguard Morningstar Mega Cap Growth ETF
 MGV,Vanguard Morningstar Mega Cap Value ETF
 MTUM,iShares MSCI USA Momentum Factor ETF
+MUB,iShares National Muni Bond ETF
+NOBL,ProShares S&P 500 Dividend Aristocrats ETF
 OEF,iShares S&P 100 ETF
+PALL,abrdn Physical Palladium Shares ETF
 PBDC,Putnam BDC Income ETF
 PDBC,Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF
 PFF,iShares Preferred and Income Securities ETF
+PICK,iShares MSCI Global Metals & Mining Producers ETF
+PPLT,abrdn Physical Platinum Shares ETF
 PREFX,T. Rowe Price Tax-Efficient Equity
 PREMX,T. Rowe Price Emerging Markets Bond
 QAI,NYLI Hedge Multi-Strategy Tracker ETF
 QQQ,Invesco QQQ Trust
+QUAL,iShares MSCI USA Quality Factor ETF
+REET,iShares Global REIT ETF
+REM,iShares Mortgage Real Estate Capped ETF
+REMX,VanEck Rare Earth and Strategic Metals ETF
+RLY,State Street Multi-Asset Real R
+SCHD,Schwab U.S. Dividend Equity ETF
 SCHH,Schwab U.S. REIT ETF
+SCHP,Schwab U.S. TIPS ETF
 SGOV,iShares 0-3 Month Treasury Bond ETF
 SHY,iShares 1-3 Year Treasury Bond ETF
+SIVR,abrdn Physical Silver Shares ETF
+SIZE,iShares MSCI USA Size Factor ETF
 SLV,iShares Silver Trust
 SLYG,State Street SPDR S&P 600 Small Cap Growth ETF
 SPY,State Street SPDR S&P 500 ETF Trust
+TAIL,Cambria Tail Risk ETF
+THD,iShares MSCI Thailand ETF
 TIP,iShares TIPS Bond ETF
 TLH,iShares 10-20 Year Treasury Bond ETF
 TLT,iShares 20+ Year Treasury Bond ETF
 TSLA,"Tesla, Inc."
+TUR,iShares MSCI Turkey ETF
+URNM,Sprott Uranium Miners ETF
 USMV,iShares MSCI USA Min Vol Factor ETF
 UTHY,F/m US Treasury 30 Year Bond ETF
 VB,Vanguard Morningstar Small-Cap ETF
 VBMFX,Vanguard Total Bond Market Index Fund
 VBR,Vanguard Morningstar Small-Cap Value ETF
 VCIT,Vanguard Intermediate-Term Corporate Bond Index Fund ETF Shares
+VCLT,Vanguard Long-Term Corporate Bond Index Fund ETF Shares
+VCSH,Vanguard Short-Term Corporate Bond Index Fund ETF Shares
 VEA,Vanguard FTSE Developed Markets Index Fund ETF Shares
 VEIEX,Vanguard Emerging Markets Stock Index Fund
 VEU,Vanguard FTSE All-World ex-US Index Fund ETF Shares
@@ -80,12 +155,15 @@ VGSH,Vanguard Short-Term Treasury Index Fund ETF Shares
 VGSIX,Vanguard Real Estate Index Investor
 VGT,Vanguard Information Technology Index Fund ETF Shares
 VGTSX,Vanguard Total Intl Stock Index Inv
+VIG,Vanguard Dividend Appreciation Index Fund ETF Shares
+VLUE,iShares MSCI USA Value Factor ETF
 VMBS,Vanguard Mortgage-Backed Securities Index Fund ETF Shares
 VNQ,Vanguard Real Estate Index Fund ETF Shares
 VNQI,Vanguard Global ex-U.S. Real Estate Index Fund ETF Shares
 VOO,Vanguard S&P 500 ETF
 VPL,Vanguard FTSE Pacific Index Fund ETF Shares
 VT,Vanguard Total World Stock Index Fund ETF Shares
+VTEB,Vanguard Tax-Exempt Bond Index Fund ETF Shares
 VTI,Vanguard Morningstar Total Stock Market ETF
 VTSMX,Vanguard Morn Total Stk Mkt Idx Investor
 VTV,Vanguard Morningstar Value ETF
@@ -96,4 +174,6 @@ VWO,Vanguard Emerging Markets Stock Index Fund
 VWOB,Vanguard Emerging Markets Government Bond Index Fund
 VWRA.L,Vanguard FTSE All-World UCITS ETF
 VXUS,Vanguard Total International Stock Index Fund ETF Shares
+VYM,Vanguard High Dividend Yield ET
+WTMF,WisdomTree Managed Futures Strategy Fund
 XLRE,State Street Real Estate Select Sector SPDR ETF
