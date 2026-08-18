@@ -91,7 +91,7 @@ export function PortfolioSettings({
 
       <div className="labelled-field">
         <label htmlFor="field-initialInvestment">
-          Initial investment (USD)
+          Initial investment ({inputs.baseCurrency})
         </label>
         <input
           aria-describedby={describedBy(
@@ -135,7 +135,7 @@ export function PortfolioSettings({
       {inputs.cashFlowMode === 'dca' && (
         <div className="labelled-field">
           <label htmlFor="field-dcaAmount">
-            Contribution per period (USD, end of period)
+            Contribution per period ({inputs.baseCurrency}, end of period)
           </label>
           <input
             aria-describedby={describedBy('dcaAmount-errors', dcaErrors)}
@@ -158,7 +158,7 @@ export function PortfolioSettings({
       {inputs.cashFlowMode === 'valueAveraging' && (
         <div className="labelled-field">
           <label htmlFor="field-vaTargetIncrease">
-            Target value increase per period (USD)
+            Target value increase per period ({inputs.baseCurrency})
           </label>
           <input
             aria-describedby={describedBy('vaTargetIncrease-errors', vaErrors)}

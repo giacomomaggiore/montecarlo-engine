@@ -20,10 +20,6 @@ import { useSimulationWorker } from './useSimulationWorker'
 // useSimulationWorker, catalogue data in the session cache. This component
 // wires them together and owns nothing else.
 
-// Only released base currency today; EUR arrives with its own artifact gate
-// (Phase 10 of the Work-in-Progress Plan).
-const BASE_CURRENCY = 'USD' as const
-
 export function SimulatorPage() {
   const [inputs, dispatchInputs] = useReducer(
     reduceSimulatorInputs,
@@ -38,17 +34,19 @@ export function SimulatorPage() {
     useState<ValidationResult<AssetsCatalogue> | null>(null)
   useEffect(() => {
     let active = true
-    fetchAssetsCatalogueCached().then((result) => {
-      // A route change can unmount this page mid-fetch; setting state on an
-      // unmounted component is a React warning and a logic smell.
-      if (active) {
-        setCatalogue(result)
-      }
-    })
+    fetchAssetsCatalogueCached(inputs.frequency, inputs.baseCurrency).then(
+      (result) => {
+        // A route change can unmount this page mid-fetch; setting state on an
+        // unmounted component is a React warning and a logic smell.
+        if (active) {
+          setCatalogue(result)
+        }
+      },
+    )
     return () => {
       active = false
     }
-  }, [])
+  }, [inputs.frequency, inputs.baseCurrency])
 
   // Memoized so a stable empty array (not a fresh literal each render) feeds
   // the plan derivation below while the catalogue is still loading.
@@ -91,7 +89,7 @@ export function SimulatorPage() {
       // The thunk defers the (possibly network-bound) dataset load to the
       // hook, which owns the loading-data state and its failure path.
       loadDataset: () =>
-        loadAlignedDataset(assetIds, inputs.frequency, BASE_CURRENCY),
+        loadAlignedDataset(assetIds, inputs.frequency, inputs.baseCurrency),
       config,
       selection,
       engineSelection,

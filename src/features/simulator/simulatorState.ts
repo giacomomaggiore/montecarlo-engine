@@ -2,6 +2,7 @@ import { estimateCommonHistory } from '../../core/data/assetCatalogue'
 import type { AssetCatalogueRecord } from '../../core/data/assetCatalogue'
 import { minimumObservations } from '../../core/data/datasetTypes'
 import type { Frequency } from '../../core/data/datasetTypes'
+import type { BaseCurrency } from '../../core/data/datasetTypes'
 import type { ParametricStudentTOptions } from '../../core/simulation/parametricStudentT'
 import {
   MAX_ASSET_COUNT,
@@ -70,6 +71,7 @@ export type SimulatorInputs = {
   // Weekly is the only released artifact today; the type keeps 'monthly' so
   // Phase 10 unlocks the control without a state-shape change.
   readonly frequency: Frequency
+  readonly baseCurrency: BaseCurrency
   readonly initialInvestment: string
   readonly cashFlowMode: CashFlowMode
   readonly dcaAmount: string
@@ -103,6 +105,7 @@ export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   paths: '2000',
   horizonYears: '10',
   frequency: 'weekly',
+  baseCurrency: 'USD',
   initialInvestment: '10000',
   cashFlowMode: 'lumpSum',
   dcaAmount: '100',
@@ -198,6 +201,8 @@ export type SimulatorInputsAction =
       readonly type: 'set-display-mode'
       readonly mode: SimulatorInputs['displayMode']
     }
+  | { readonly type: 'set-frequency'; readonly frequency: Frequency }
+  | { readonly type: 'set-base-currency'; readonly baseCurrency: BaseCurrency }
 
 export function reduceSimulatorInputs(
   state: SimulatorInputs,
@@ -308,6 +313,16 @@ export function reduceSimulatorInputs(
 
     case 'set-display-mode':
       return { ...state, displayMode: action.mode }
+
+    case 'set-frequency':
+      return {
+        ...state,
+        frequency:
+          state.leverageMode === 'enabled' ? 'weekly' : action.frequency,
+      }
+
+    case 'set-base-currency':
+      return { ...state, baseCurrency: action.baseCurrency }
   }
 }
 

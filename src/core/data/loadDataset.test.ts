@@ -47,6 +47,7 @@ function buildFixture(
     schemaVersion: 'dataset-manifest-v1',
     datasetVersion: 'fixture-weekly-usd-v1',
     checksum: options.checksum ?? ZERO_CHECKSUM,
+    matrixFileName: 'returns-weekly-usd.f32',
     frequency: 'weekly',
     baseCurrency: 'USD',
     dtype: 'float32',
@@ -166,6 +167,16 @@ describe('parseManifest', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errors.some((error) => error.code === 'manifest.dtype')).toBe(true)
+    }
+  })
+
+  it('rejects an unsafe manifest-declared matrix filename', () => {
+    const manifest = validManifestJson()
+    manifest['matrixFileName'] = '../returns-weekly-usd.f32'
+    const result = parseManifest(manifest)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((error) => error.code === 'manifest.matrixFileName')).toBe(true)
     }
   })
 
@@ -295,7 +306,7 @@ describe('loadAlignedDataset — fetch, verify, and slice', () => {
     )
 
     const { loadAlignedDataset } = await import('./loadDataset')
-    const result = await loadAlignedDataset(['A'], 'monthly', 'USD')
+    const result = await loadAlignedDataset(['A'], 'weekly', 'EUR')
 
     expect(result.ok).toBe(false)
     if (result.ok) return

@@ -2,6 +2,7 @@ import { estimateCommonHistory } from '../../core/data/assetCatalogue'
 import type { AssetCatalogueRecord } from '../../core/data/assetCatalogue'
 import { minimumObservations } from '../../core/data/datasetTypes'
 import type { ValidationError } from '../../core/validation'
+import { releasedBaseCurrencies } from '../../core/data/loadDataset'
 import {
   describedBy,
   errorsForCode,
@@ -186,16 +187,52 @@ export function SimulationInputs({
           <input
             checked={inputs.frequency === 'weekly'}
             name="frequency"
-            onChange={() => undefined}
+            onChange={() =>
+              dispatch({ type: 'set-frequency', frequency: 'weekly' })
+            }
             type="radio"
             value="weekly"
           />
           Weekly
         </label>
-        <label className="disabled-option">
-          <input disabled name="frequency" type="radio" value="monthly" />
-          Monthly — no monthly dataset released yet
+        <label
+          className={
+            inputs.leverageMode === 'enabled' ? 'disabled-option' : undefined
+          }
+        >
+          <input
+            checked={inputs.frequency === 'monthly'}
+            disabled={inputs.leverageMode === 'enabled'}
+            name="frequency"
+            onChange={() =>
+              dispatch({ type: 'set-frequency', frequency: 'monthly' })
+            }
+            type="radio"
+            value="monthly"
+          />
+          Monthly
+          {inputs.leverageMode === 'enabled'
+            ? ' — leverage requires weekly data'
+            : ''}
         </label>
+      </fieldset>
+
+      <fieldset className="radio-group">
+        <legend>Base currency</legend>
+        {releasedBaseCurrencies().map((baseCurrency) => (
+          <label key={baseCurrency}>
+            <input
+              checked={inputs.baseCurrency === baseCurrency}
+              name="base-currency"
+              onChange={() =>
+                dispatch({ type: 'set-base-currency', baseCurrency })
+              }
+              type="radio"
+              value={baseCurrency}
+            />
+            {baseCurrency}
+          </label>
+        ))}
       </fieldset>
 
       {inputs.engine === 'bootstrap' && (

@@ -13,7 +13,7 @@ import { minimumObservations } from './datasetTypes'
 // how much joint history a selection has. The heavy return matrix is only
 // fetched later, at Run time, by loadDataset.ts.
 
-const ASSETS_JSON_PATH = '/data/assets.json'
+const DATA_BASE_PATH = '/data/releases'
 
 // Per-asset history span, produced by the pipeline from that asset's own
 // finite return observations. This is a PREVIEW input, not the binding
@@ -272,13 +272,22 @@ export function estimateCommonHistory(
 // Fetching, with the same per-session cache discipline as the dataset loader
 // ---------------------------------------------------------------------------
 
-let catalogueCache: Promise<ValidationResult<AssetsCatalogue>> | null = null
+const catalogueCache = new Map<string, Promise<ValidationResult<AssetsCatalogue>>>()
 
-async function fetchAssetsCatalogue(): Promise<
-  ValidationResult<AssetsCatalogue>
-> {
+function catalogueKey(frequency: Frequency, baseCurrency: BaseCurrency): string {
+  return `${frequency}:${baseCurrency}`
+}
+
+function assetsCataloguePath(frequency: Frequency, baseCurrency: BaseCurrency): string {
+  return `${DATA_BASE_PATH}/${frequency}-${baseCurrency.toLowerCase()}/assets.json`
+}
+
+async function fetchAssetsCatalogueForRelease(
+  frequency: Frequency,
+  baseCurrency: BaseCurrency,
+): Promise<ValidationResult<AssetsCatalogue>> {
   try {
-    const response = await fetch(ASSETS_JSON_PATH)
+    const response = await fetch(assetsCataloguePath(frequency, baseCurrency))
     if (!response.ok) {
       return {
         ok: false,
@@ -312,17 +321,22 @@ async function fetchAssetsCatalogue(): Promise<
 // search, so it must be memory-resident, not re-fetched per query). A failed
 // fetch is NOT cached: a transient network error must not permanently break
 // the picker for the whole session.
-export function fetchAssetsCatalogueCached(): Promise<
+export function fetchAssetsCatalogueCached(
+  frequency: Frequency = 'weekly',
+  baseCurrency: BaseCurrency = 'USD',
+): Promise<
   ValidationResult<AssetsCatalogue>
 > {
-  if (catalogueCache !== null) {
-    return catalogueCache
+  const key = catalogueKey(frequency, baseCurrency)
+  const cached = catalogueCache.get(key)
+  if (cached !== undefined) {
+    return cached
   }
-  const pending = fetchAssetsCatalogue()
-  catalogueCache = pending
+  const pending = fetchAssetsCatalogueForRelease(frequency, baseCurrency)
+  catalogueCache.set(key, pending)
   pending.then((result) => {
     if (!result.ok) {
-      catalogueCache = null
+      catalogueCache.delete(key)
     }
   })
   return pending
@@ -331,5 +345,5 @@ export function fetchAssetsCatalogueCached(): Promise<
 // Test-only escape hatch: module-level caches survive across Vitest cases in
 // the same file, so tests that stub fetch differently must reset first.
 export function resetAssetsCatalogueCacheForTests(): void {
-  catalogueCache = null
+  catalogueCache.clear()
 }

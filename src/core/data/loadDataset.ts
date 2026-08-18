@@ -17,18 +17,33 @@ export type { AssetCatalogueRecord, AssetsCatalogue } from './assetCatalogue'
 // checks, and slices the user's selected assets into the AlignedDataset
 // shape core/simulation already validates and consumes unchanged.
 
-const DATA_BASE_PATH = '/data'
+const DATA_BASE_PATH = '/data/releases'
 
 // Only this one release exists on disk today (see LOG.MD's Dataset artifact
 // gate entry). Requesting any other combination must fail with a structured,
 // explicit error -- never a 404 surfacing as an opaque fetch exception, and
 // never a silent fallback to a different dataset than the one requested.
-const RELEASED_DATASETS: ReadonlySet<string> = new Set(['weekly:USD'])
+const RELEASED_DATASETS: ReadonlySet<string> = new Set([
+  'weekly:USD',
+  'monthly:USD',
+])
+
+export function isReleasedDataset(
+  frequency: Frequency,
+  baseCurrency: BaseCurrency,
+): boolean {
+  return RELEASED_DATASETS.has(datasetKey(frequency, baseCurrency))
+}
+
+export function releasedBaseCurrencies(): readonly BaseCurrency[] {
+  return ['USD']
+}
 
 export type DatasetManifest = {
   readonly schemaVersion: string
   readonly datasetVersion: string
   readonly checksum: string
+  readonly matrixFileName: string
   readonly frequency: Frequency
   readonly baseCurrency: BaseCurrency
   readonly dtype: string
@@ -60,8 +75,8 @@ function datasetKey(frequency: Frequency, baseCurrency: BaseCurrency): string {
   return `${frequency}:${baseCurrency}`
 }
 
-function matrixFileName(frequency: Frequency, baseCurrency: BaseCurrency): string {
-  return `returns-${frequency}-${baseCurrency.toLowerCase()}.f32`
+function releaseDirectory(frequency: Frequency, baseCurrency: BaseCurrency): string {
+  return `${DATA_BASE_PATH}/${frequency}-${baseCurrency.toLowerCase()}`
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +122,13 @@ export function parseManifest(raw: unknown): ValidationResult<DatasetManifest> {
   const checksum = requireNonEmptyString(manifest, 'checksum', 'manifest', errors)
   if (checksum !== undefined && !checksum.startsWith('sha256:')) {
     errors.push(error('manifest.checksum.format', "manifest.checksum must start with 'sha256:'."))
+  }
+  const matrixFileName = requireNonEmptyString(manifest, 'matrixFileName', 'manifest', errors)
+  if (
+    matrixFileName !== undefined &&
+    (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.f32$/.test(matrixFileName) || matrixFileName.includes('..'))
+  ) {
+    errors.push(error('manifest.matrixFileName', 'manifest.matrixFileName must be a safe .f32 filename.'))
   }
 
   const frequency = manifest['frequency']
@@ -217,6 +239,7 @@ export function parseManifest(raw: unknown): ValidationResult<DatasetManifest> {
       schemaVersion: manifest['schemaVersion'] as string,
       datasetVersion: manifest['datasetVersion'] as string,
       checksum: checksum as string,
+      matrixFileName: matrixFileName as string,
       frequency: frequency as Frequency,
       baseCurrency: baseCurrency as BaseCurrency,
       dtype: manifest['dtype'] as string,
@@ -300,29 +323,25 @@ export async function fetchDatasetArtifacts(
       errors: [
         error(
           'dataset.release.unavailable',
-          `No released dataset exists yet for ${frequency}/${baseCurrency}. Only weekly/USD is available today.`,
+          `No released dataset exists yet for ${frequency}/${baseCurrency}.`,
         ),
       ],
     }
   }
 
   try {
-    const [manifestResponse, assetsResponse, matrixResponse] = await Promise.all([
-      fetch(`${DATA_BASE_PATH}/manifest.json`),
-      fetch(`${DATA_BASE_PATH}/assets.json`),
-      fetch(`${DATA_BASE_PATH}/${matrixFileName(frequency, baseCurrency)}`),
+    const directory = releaseDirectory(frequency, baseCurrency)
+    const [manifestResponse, assetsResponse] = await Promise.all([
+      fetch(`${directory}/manifest.json`),
+      fetch(`${directory}/assets.json`),
     ])
 
     if (!manifestResponse.ok) return fetchFailure('manifest.json', manifestResponse.status)
     if (!assetsResponse.ok) return fetchFailure('assets.json', assetsResponse.status)
-    if (!matrixResponse.ok) {
-      return fetchFailure(matrixFileName(frequency, baseCurrency), matrixResponse.status)
-    }
 
-    const [manifestJson, assetsJson, matrixBuffer] = await Promise.all([
+    const [manifestJson, assetsJson] = await Promise.all([
       manifestResponse.json(),
       assetsResponse.json(),
-      matrixResponse.arrayBuffer(),
     ])
 
     const manifestResult = parseManifest(manifestJson)
@@ -345,6 +364,12 @@ export async function fetchDatasetArtifacts(
         ],
       }
     }
+
+    const matrixResponse = await fetch(`${directory}/${manifest.matrixFileName}`)
+    if (!matrixResponse.ok) {
+      return fetchFailure(manifest.matrixFileName, matrixResponse.status)
+    }
+    const matrixBuffer = await matrixResponse.arrayBuffer()
 
     const assetsResult = parseAssetsCatalogue(assetsJson)
     if (!assetsResult.ok) return assetsResult

@@ -1073,3 +1073,55 @@ Every file is CRLF-delimited RFC 4180 CSV with stable ASCII `snake_case` headers
 ### Next step
 
 Phase 10: release monthly USD through the same artifact contract, then add EUR only after its FX routes, HICP, EUR short-rate, provenance, and browser-equivalent validation gate are complete.
+
+## 2026-08-18 - Phase 10: monthly USD release and release-scoped loading
+
+### Scope completed
+
+- Generalized the USD artifact builder for `--frequency weekly|monthly` and moved releases under `public/data/releases/<frequency>-usd/`.
+- Built and validated `usd-monthly-v1`: 559 rows, 100 columns, and a 223,600-byte little-endian column-major matrix. Its SHA-256 checksum is `sha256:132da2d1e8986d88aad8bcab0fda04cf0aef24587bffdcdcb4425106eca8864e`.
+- Rebuilt `usd-weekly-v1` at its release-scoped path: 2,429 rows, 100 columns, and a 971,600-byte matrix with checksum `sha256:f3e62b5fd0e8f6e048529212886417b0bf7e657366446dff138f2cbec0c632f3`.
+- Every manifest now declares a safe `matrixFileName`. The browser loader fetches the release-scoped manifest/catalogue first, validates the filename, then fetches and checksum-validates the matrix before slicing any column.
+- Added `monthly:USD` to the browser release registry. Artifact and catalogue caches are keyed by frequency/base currency; unsupported combinations return a structured `dataset.release.unavailable` error without fetching.
+- Enabled monthly frequency in the input UI for unlevered runs. It uses the existing 12-period annualization and 60-observation core minimum; enabled leverage keeps frequency locked to weekly. The base-currency control lists only released currencies, currently USD.
+
+### Monthly methodology
+
+- Asset adjusted-close series and the EFFR cash index are resampled to their last valid calendar-month observation and converted with `pct_change(fill_method=None)`. No weekly aggregation or forward-fill is used.
+- CPI uses its direct monthly log change. Weekly retains the established deterministic equal-split conversion of each monthly log change across weekly rows.
+- Both releases preserve the union-date matrix and `NaN` availability policy. The browser continues to choose jointly finite rows for the selected portfolio and special series, so the 60-month/260-week minimum remains selection-specific.
+
+### EUR status
+
+EUR is intentionally not released. The repository has neither validated FX route records nor EUR-native HICP and short-rate inputs. The current catalogue is deliberately USD-only; treating EUR listings as EUR economic returns would violate the documented `returnCurrency` and hedge rules. Phase 10.4-10.6 remain open pending sourced FX/macro data and provenance validation.
+
+### Validation completed
+
+- `/usr/local/bin/python3 pipeline/build_release.py --frequency monthly`: built `usd-monthly-v1`.
+- `/usr/local/bin/python3 pipeline/validate_release.py --frequency monthly --base-currency USD`: passed checksum, length, dates, NaN/infinity, and catalogue consistency checks.
+- Weekly rebuild and the matching validator command: passed.
+- `python -m py_compile pipeline/build_release.py pipeline/validate_release.py`: passed.
+- Focused loader, catalogue, reducer, and simulator page tests: passed.
+- Complete Vitest suite: 33 files and 272 tests passed.
+- `npm run format`, `npm run lint`, and `npm run build`: passed.
+
+## 2026-08-18 - EUR raw source acquisition
+
+### Downloaded sources
+
+- `data/eur-sources/ECB_EXR_USD_EUR_SP00_A.csv`: ECB USD/EUR reference exchange rate, 1999-01-04 through 2026-08-17.
+- `data/eur-sources/ECB_EONIA_RATE.csv`: historical EONIA overnight rate, 1999-01-04 through 2021-12-31.
+- `data/eur-sources/ECB_ESTR_RATE.csv`: euro short-term rate, 2019-10-01 through 2026-08-14.
+- `data/eur-sources/FRED_HICP_EA19_CP0000EZ19M086NEST.csv`: monthly EA19 all-items HICP index, 1996-12-01 through 2026-06-01.
+
+`data/eur-sources/SOURCES.md` records authoritative endpoints, quote orientation, coverage, SHA-256 checksums, and the planned rate-splice/conversion requirements.
+
+### Remaining gate
+
+The intended Eurostat EA20 HICP endpoint could not be downloaded because TLS certificate verification failed in this environment. The FRED EA19 mirror is retained only as a provisional raw source; it is not approved for the EUR release without an explicit aggregate-policy decision. FX routes and per-asset return-currency/hedge provenance remain unresearched, so no EUR release artifact or UI option was enabled.
+
+### Validation completed
+
+- Verified all four raw source files are non-empty.
+- Recomputed and matched all source-file SHA-256 values recorded in `SOURCES.md`.
+- `npm run format`: passed.

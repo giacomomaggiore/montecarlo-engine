@@ -11,19 +11,19 @@ results" rule -- a broken release must fail loudly here, not surface as a
 confusing bug three layers later in the browser.
 
 Usage:
-    python pipeline/validate_release.py
+    python pipeline/validate_release.py --frequency weekly --base-currency USD
+    python pipeline/validate_release.py --frequency monthly --base-currency USD
 """
 
+import argparse
 import hashlib
 import json
+import os
 import sys
 
 import numpy as np
 
-OUTPUT_DIR = "public/data"
-MATRIX_PATH = f"{OUTPUT_DIR}/returns-weekly-usd.f32"
-MANIFEST_PATH = f"{OUTPUT_DIR}/manifest.json"
-ASSETS_JSON_PATH = f"{OUTPUT_DIR}/assets.json"
+OUTPUT_ROOT = "public/data/releases"
 
 
 def fail(message):
@@ -56,17 +56,15 @@ def sha256_of_file(path):
     return digest.hexdigest()
 
 
-def check_checksum(manifest):
-    actual = f"sha256:{sha256_of_file(MATRIX_PATH)}"
+def check_checksum(manifest, matrix_path):
+    actual = f"sha256:{sha256_of_file(matrix_path)}"
     if actual != manifest["checksum"]:
         fail(f"checksum mismatch: manifest says {manifest['checksum']}, file hashes to {actual}")
     print("checksum matches the matrix file's actual bytes")
 
 
-def check_byte_length(manifest):
-    import os
-
-    actual_length = os.path.getsize(MATRIX_PATH)
+def check_byte_length(manifest, matrix_path):
+    actual_length = os.path.getsize(matrix_path)
     if actual_length != manifest["byteLength"]:
         fail(f"byte length mismatch: manifest says {manifest['byteLength']}, file is {actual_length}")
 
@@ -96,10 +94,10 @@ def check_dates(manifest):
     print(f"all {len(dates)} dates are valid ISO calendar dates in strictly increasing order")
 
 
-def check_matrix_values(manifest):
+def check_matrix_values(manifest, matrix_path):
     row_count = manifest["rowCount"]
     columns = manifest["columns"]
-    matrix = np.fromfile(MATRIX_PATH, dtype="<f4").reshape(len(columns), row_count).T
+    matrix = np.fromfile(matrix_path, dtype="<f4").reshape(len(columns), row_count).T
 
     if matrix.shape != (row_count, len(columns)):
         fail(f"matrix shape {matrix.shape} does not match manifest ({row_count}, {len(columns)})")
@@ -114,8 +112,8 @@ def check_matrix_values(manifest):
     return matrix
 
 
-def check_assets_json_consistency(manifest, matrix):
-    assets_json = load_strict_json(ASSETS_JSON_PATH)
+def check_assets_json_consistency(manifest, matrix, assets_json_path):
+    assets_json = load_strict_json(assets_json_path)
 
     manifest_assets = set(manifest["assetColumns"])
     catalogue_assets = {record["assetId"] for record in assets_json["assets"]}
@@ -142,13 +140,32 @@ def check_assets_json_consistency(manifest, matrix):
 
 
 def main():
-    manifest = load_strict_json(MANIFEST_PATH)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--frequency", choices=["weekly", "monthly"], required=True)
+    parser.add_argument("--base-currency", choices=["USD", "EUR"], required=True)
+    arguments = parser.parse_args()
+    release_directory = os.path.join(
+        OUTPUT_ROOT, f"{arguments.frequency}-{arguments.base_currency.lower()}"
+    )
+    manifest_path = os.path.join(release_directory, "manifest.json")
+    assets_json_path = os.path.join(release_directory, "assets.json")
+    manifest = load_strict_json(manifest_path)
 
-    check_checksum(manifest)
-    check_byte_length(manifest)
+    if manifest.get("frequency") != arguments.frequency or manifest.get("baseCurrency") != arguments.base_currency:
+        fail("manifest identity does not match the requested release")
+
+    matrix_filename = manifest.get("matrixFileName")
+    if not isinstance(matrix_filename, str) or not matrix_filename or os.path.basename(matrix_filename) != matrix_filename:
+        fail("manifest.matrixFileName must be one non-empty relative filename")
+    matrix_path = os.path.join(release_directory, matrix_filename)
+    if not os.path.isfile(matrix_path):
+        fail(f"manifest-declared matrix file is missing: {matrix_filename}")
+
+    check_checksum(manifest, matrix_path)
+    check_byte_length(manifest, matrix_path)
     check_dates(manifest)
-    matrix = check_matrix_values(manifest)
-    check_assets_json_consistency(manifest, matrix)
+    matrix = check_matrix_values(manifest, matrix_path)
+    check_assets_json_consistency(manifest, matrix, assets_json_path)
 
     print("\nAll dataset artifact gate checks passed.")
 
