@@ -13,9 +13,9 @@ import { FieldErrors } from './FieldErrors'
 // the nominal/real display toggle. Every control maps to a validated core rule.
 
 const CASH_FLOW_LABELS: Record<CashFlowMode, string> = {
-  lumpSum: 'Lump sum (no later contributions)',
-  dca: 'DCA (fixed contribution each period)',
-  valueAveraging: 'Value averaging (contribute up to a target path)',
+  lumpSum: 'Lump sum',
+  dca: 'DCA',
+  valueAveraging: 'Value averaging',
 }
 
 const REBALANCING_LABELS: Record<RebalancingMode, string> = {
@@ -113,21 +113,45 @@ export function PortfolioSettings({
         <FieldErrors errors={initialErrors} id="initialInvestment-errors" />
       </div>
 
-      <fieldset className="radio-group">
-        <legend>Cash-flow mode</legend>
-        {(Object.keys(CASH_FLOW_LABELS) as CashFlowMode[]).map((mode) => (
-          <label key={mode}>
-            <input
-              checked={inputs.cashFlowMode === mode}
-              name="cash-flow-mode"
-              onChange={() => dispatch({ type: 'set-cash-flow-mode', mode })}
-              type="radio"
-              value={mode}
-            />
-            {CASH_FLOW_LABELS[mode]}
-          </label>
-        ))}
-      </fieldset>
+      <div className="portfolio-choice-grid">
+        <fieldset className="radio-group">
+          <legend>Cash-flow mode</legend>
+          {(Object.keys(CASH_FLOW_LABELS) as CashFlowMode[]).map((mode) => (
+            <label key={mode}>
+              <input
+                checked={inputs.cashFlowMode === mode}
+                name="cash-flow-mode"
+                onChange={() =>
+                  dispatch({ type: 'set-cash-flow-mode', mode })
+                }
+                type="radio"
+                value={mode}
+              />
+              {CASH_FLOW_LABELS[mode]}
+            </label>
+          ))}
+        </fieldset>
+
+        <fieldset className="radio-group">
+          <legend>Rebalancing</legend>
+          {(Object.keys(REBALANCING_LABELS) as RebalancingMode[]).map(
+            (mode) => (
+              <label key={mode}>
+                <input
+                  checked={inputs.rebalancingMode === mode}
+                  name="rebalancing-mode"
+                  onChange={() =>
+                    dispatch({ type: 'set-rebalancing-mode', mode })
+                  }
+                  type="radio"
+                  value={mode}
+                />
+                {REBALANCING_LABELS[mode]}
+              </label>
+            ),
+          )}
+        </fieldset>
+      </div>
 
       {/* Only the ACTIVE mode's amount renders (and only the active mode is
           validated): a half-edited number in an inactive mode must never
@@ -177,22 +201,6 @@ export function PortfolioSettings({
           <FieldErrors errors={vaErrors} id="vaTargetIncrease-errors" />
         </div>
       )}
-
-      <fieldset className="radio-group">
-        <legend>Rebalancing</legend>
-        {(Object.keys(REBALANCING_LABELS) as RebalancingMode[]).map((mode) => (
-          <label key={mode}>
-            <input
-              checked={inputs.rebalancingMode === mode}
-              name="rebalancing-mode"
-              onChange={() => dispatch({ type: 'set-rebalancing-mode', mode })}
-              type="radio"
-              value={mode}
-            />
-            {REBALANCING_LABELS[mode]}
-          </label>
-        ))}
-      </fieldset>
 
       {inputs.rebalancingMode === 'time' && (
         <div className="labelled-field">

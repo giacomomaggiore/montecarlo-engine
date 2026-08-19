@@ -55,17 +55,18 @@ export function PortfolioConstruction({
     const value = Number(holding.weightPercent)
     return total + (Number.isFinite(value) ? value : 0)
   }, 0)
+  const formattedTotalPercent = Number(totalPercent.toFixed(2))
+  const hasValidAllocationTotal = Math.abs(totalPercent - 100) <= 0.01
 
   const holdingsErrors = errorsForCode(errors, 'inputs.holdings.count')
-  const totalErrors = errorsForCode(errors, 'inputs.weights.total')
   const historyErrors = errorsForCode(errors, 'inputs.history.insufficient')
 
   return (
     <fieldset className="input-section">
       <legend>Portfolio construction</legend>
 
-      <label htmlFor="etf-search">Search ETFs and assets</label>
       <input
+        aria-label="Search ETFs and assets"
         autoComplete="off"
         id="etf-search"
         onChange={(event) => setQuery(event.target.value)}
@@ -73,11 +74,8 @@ export function PortfolioConstruction({
         type="search"
         value={query}
       />
-      {normalizedQuery.length > 0 && (
+      {normalizedQuery.length > 0 && searchResults.length > 0 && (
         <ul aria-label="Search results" className="picker-results">
-          {searchResults.length === 0 && (
-            <li className="picker-empty">No matching assets.</li>
-          )}
           {searchResults.map((asset) => (
             <li key={asset.assetId}>
               <button
@@ -104,6 +102,12 @@ export function PortfolioConstruction({
       {holdings.length > 0 && (
         <table className="holdings-table">
           <caption className="visually-hidden">Selected holdings</caption>
+          <colgroup>
+            <col className="holding-ticker-column" />
+            <col className="holding-name-column" />
+            <col className="holding-allocation-column" />
+            <col className="holding-action-column" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Ticker</th>
@@ -156,15 +160,17 @@ export function PortfolioConstruction({
                   </td>
                   <td>
                     <button
+                      aria-label={`Remove ${record?.ticker ?? holding.assetId}`}
                       onClick={() =>
                         dispatch({
                           type: 'remove-holding',
                           assetId: holding.assetId,
                         })
                       }
+                      title={`Remove ${record?.ticker ?? holding.assetId}`}
                       type="button"
                     >
-                      Remove {holding.assetId}
+                      ×
                     </button>
                   </td>
                 </tr>
@@ -177,13 +183,18 @@ export function PortfolioConstruction({
       {/* The continuously displayed running total the spec requires — the
           user watches this converge to 100 while splitting allocations. */}
       <p aria-live="polite" className="allocation-total">
-        Allocation total: {totalPercent.toFixed(2)}%
+        {hasValidAllocationTotal
+          ? 'total: 100%'
+          : `total: ${formattedTotalPercent}% `}
+        {!hasValidAllocationTotal && (
+          <strong className="allocation-warning">(must be 100%)</strong>
+        )}
       </p>
-      <FieldErrors errors={totalErrors} id="weights-total-errors" />
       <FieldErrors errors={historyErrors} id="history-errors" />
 
       <label htmlFor="benchmark-select">Optional benchmark ETF</label>
       <select
+        className="benchmark-select"
         id="benchmark-select"
         onChange={(event) =>
           dispatch({

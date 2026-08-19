@@ -141,7 +141,7 @@ pre {
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.6rem;
   margin: 0;
   padding: 1rem;
 }
@@ -333,5 +333,615 @@ input[aria-invalid='true'] {
   * {
     animation-duration: 0.001s !important;
     transition-duration: 0.001s !important;
+  }
+}
+
+/* Editorial notebook redesign. */
+:root {
+  background: #ffffff;
+  color: #111111;
+  font-family: Geist, 'Geist Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  background: #ffffff;
+}
+
+body {
+  min-width: 20rem;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration-color: #9a9a9a;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  text-decoration-color: currentcolor;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+.site-header {
+  align-items: baseline;
+  background: transparent;
+  border: 0;
+  gap: 2.5rem;
+  margin: 0 auto;
+  max-width: 76rem;
+  padding: 2rem 2rem 0;
+}
+
+.product-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+  max-width: 17rem;
+}
+
+nav {
+  gap: 1.4rem;
+  justify-content: flex-end;
+}
+
+.nav-link,
+.active-nav-link {
+  color: #666666;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.nav-link:hover,
+.active-nav-link {
+  color: #111111;
+  font-weight: 600;
+}
+
+.page-content {
+  max-width: 76rem;
+  padding: 6.5rem 2rem 5rem;
+}
+
+h1,
+h2,
+h3,
+h4,
+legend,
+caption {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 1;
+  margin-bottom: 3.5rem;
+}
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.1rem;
+  line-height: 1.3;
+  margin: 3.5rem 0 0.7rem;
+}
+
+h4 {
+  font-size: 0.94rem;
+  margin: 2.5rem 0 0.65rem;
+}
+
+p,
+li,
+dd,
+td,
+th,
+label,
+input,
+select,
+button {
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+button {
+  background: #111111;
+  border: 1px solid #111111;
+  border-radius: 3px;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 0.57rem 0.75rem;
+}
+
+button:hover:not(:disabled) {
+  background: #333333;
+}
+
+button:disabled {
+  background: #111111;
+  border-color: #111111;
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.phase-note,
+.input-hint {
+  color: #686868;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin-bottom: 0;
+}
+
+.input-workspace {
+  gap: 4.5rem;
+  margin: 0;
+}
+
+.input-column {
+  gap: 4.5rem;
+}
+
+.input-section,
+.input-subsection {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid #111111;
+  gap: 0.75rem;
+  padding: 0.7rem 0 0;
+}
+
+.input-subsection {
+  border-top-color: #d8d8d8;
+  margin-top: 0.5rem;
+}
+
+.input-section legend,
+.input-subsection legend {
+  font-size: 1rem;
+  padding: 0;
+}
+
+.engine-selector {
+  border: 0;
+  border-bottom: 1px solid #d8d8d8;
+  border-radius: 0;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0 1rem;
+}
+
+.engine-selector legend,
+.radio-group legend {
+  margin-bottom: 0.6rem;
+}
+
+.engine-selector button {
+  background: transparent;
+  border-color: #c8c8c8;
+  color: #555555;
+}
+
+.engine-selector button[aria-pressed='true'] {
+  background: #111111;
+  border-color: #111111;
+  color: #ffffff;
+  font-weight: 500;
+  outline: 0;
+}
+
+.radio-group {
+  border: 0;
+  border-radius: 0;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
+.radio-group label {
+  gap: 0.45rem;
+}
+
+.portfolio-choice-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+input[type='radio'] {
+  accent-color: #111111;
+}
+
+input[type='text'],
+input[type='search'],
+input:not([type]),
+select {
+  background: #ffffff;
+  border: 1px solid #b7b7b7;
+  border-radius: 3px;
+  color: #111111;
+  max-width: 18rem;
+  padding: 0.43rem 0.55rem;
+}
+
+input[type='search'] {
+  max-width: none;
+  width: 100%;
+}
+
+.benchmark-select {
+  max-width: none;
+  width: 100%;
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 3px;
+}
+
+input[aria-invalid='true'] {
+  border-color: #a12622;
+}
+
+.disabled-option,
+.picker-empty {
+  color: #777777;
+}
+
+.field-errors,
+.validation-summary,
+[role='alert'] {
+  color: #a12622;
+}
+
+.field-errors {
+  font-size: 0.78rem;
+}
+
+.validation-summary {
+  margin-top: 2rem;
+  max-width: 43rem;
+}
+
+.picker-results {
+  border: 1px solid #d8d8d8;
+  border-radius: 3px;
+  margin: 0;
+  padding: 0.4rem;
+}
+
+.picker-results li + li {
+  border-top: 1px solid #e8e8e8;
+  margin-top: 0;
+}
+
+.picker-results button {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #111111;
+  font-size: 0.84rem;
+  font-weight: 400;
+  padding: 0.45rem;
+}
+
+.picker-results button:hover:not(:disabled) {
+  background: #f1f1f1;
+}
+
+.holdings-table,
+.metrics-table {
+  background: transparent;
+  border: 0;
+  border-collapse: collapse;
+  display: block;
+  margin: 0.2rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.holdings-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.holding-ticker-column {
+  width: 5.5rem;
+}
+
+.holding-allocation-column {
+  width: 7.25rem;
+}
+
+.holding-action-column {
+  width: 2.5rem;
+}
+
+.holdings-table caption,
+.metrics-table caption {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0 0 0.55rem;
+}
+
+.holdings-table th,
+.holdings-table td,
+.metrics-table th,
+.metrics-table td {
+  border: 0;
+  border-bottom: 1px solid #d8d8d8;
+  padding: 0.4rem 0.6rem;
+}
+
+.holdings-table thead th,
+.metrics-table thead th {
+  border-top: 1px solid #111111;
+  color: #686868;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.holdings-table tbody th,
+.metrics-table tbody th {
+  font-weight: 500;
+}
+
+.holdings-table th,
+.holdings-table td {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.holdings-table input {
+  max-width: 5.75rem;
+}
+
+.holdings-table button {
+  background: transparent;
+  border: 0;
+  color: #555555;
+  font-size: 1.1rem;
+  line-height: 1;
+  min-height: 1.5rem;
+  min-width: 1.5rem;
+  padding: 0.1rem;
+  text-decoration: none;
+}
+
+.holdings-table button:hover:not(:disabled) {
+  background: transparent;
+  color: #111111;
+}
+
+.allocation-total {
+  border-top: 1px solid #d8d8d8;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin: 0.25rem 0 0;
+  padding-top: 0.75rem;
+}
+
+.allocation-warning {
+  color: #a12622;
+  font-size: inherit;
+  font-weight: 700;
+  margin-left: 0.7rem;
+}
+
+.engine-controls {
+  border-top: 1px solid #d8d8d8;
+  gap: 0.55rem;
+  margin: 3.25rem 0 0;
+  padding-top: 1rem;
+}
+
+.engine-controls button + button {
+  background: transparent;
+  color: #111111;
+}
+
+.results-panel {
+  border-top: 1px solid #111111;
+  margin-top: 5rem;
+  padding-top: 0.1rem;
+}
+
+.completed-run-label {
+  background: transparent;
+  border-bottom: 1px solid #d8d8d8;
+  border-left: 0;
+  color: #555555;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  margin: 0;
+  padding: 0.85rem 0;
+}
+
+.probability-list {
+  border-top: 1px solid #d8d8d8;
+  display: grid;
+  gap: 0.35rem 2rem;
+  grid-template-columns: minmax(10rem, 0.4fr) 1fr;
+  margin: 1.5rem 0 0;
+  padding-top: 1rem;
+}
+
+.probability-list dt {
+  font-size: 0.84rem;
+  font-weight: 600;
+  margin-top: 0;
+}
+
+.probability-list dd {
+  font-size: 0.84rem;
+  margin: 0;
+}
+
+.path-detail-scroll {
+  border-bottom: 1px solid #d8d8d8;
+  max-height: 28rem;
+  padding-bottom: 1rem;
+}
+
+@media (max-width: 52rem) {
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1.2rem;
+    padding: 1.4rem 1.25rem 0;
+  }
+
+  nav {
+    gap: 1rem;
+    justify-content: flex-start;
+  }
+
+  .page-content {
+    padding: 4.5rem 1.25rem 3rem;
+  }
+
+  h1 {
+    margin-bottom: 2.75rem;
+  }
+
+  .input-workspace {
+    gap: 3.5rem;
+    grid-template-columns: 1fr;
+  }
+
+  .input-column {
+    gap: 3.5rem;
+  }
+
+  .portfolio-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .probability-list {
+    grid-template-columns: 1fr;
+  }
+
+  .probability-list dd {
+    margin-bottom: 0.8rem;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  html {
+    background: #000000;
+    color: #ffffff;
+  }
+
+  .nav-link,
+  .active-nav-link,
+  .phase-note,
+  .input-hint,
+  .disabled-option,
+  .picker-empty,
+  .completed-run-label,
+  .holdings-table thead th,
+  .metrics-table thead th {
+    color: #a5a5a5;
+  }
+
+  .active-nav-link,
+  .nav-link:hover {
+    color: #ffffff;
+  }
+
+  button {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
+  }
+
+  button:disabled {
+    background: #ffffff;
+    border-color: #ffffff;
+  }
+
+  .engine-controls button + button,
+  .engine-selector button,
+  .picker-results button,
+  .holdings-table button {
+    background: transparent;
+    color: #ffffff;
+  }
+
+  .engine-selector button {
+    border-color: #666666;
+  }
+
+  .engine-selector button[aria-pressed='true'] {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
+  }
+
+  input[type='text'],
+  input[type='search'],
+  input:not([type]),
+  select {
+    background: #000000;
+    border-color: #777777;
+    color: #ffffff;
+  }
+
+  .input-section,
+  .results-panel,
+  .holdings-table thead th,
+  .metrics-table thead th {
+    border-top-color: #ffffff;
+  }
+
+  .input-subsection,
+  .engine-controls,
+  .engine-selector,
+  .allocation-total,
+  .probability-list,
+  .holdings-table th,
+  .holdings-table td,
+  .metrics-table th,
+  .metrics-table td,
+  .picker-results,
+  .picker-results li + li,
+  .completed-run-label,
+  .path-detail-scroll {
+    border-color: #4d4d4d;
+  }
+
+  .picker-results button:hover:not(:disabled) {
+    background: #1d1d1d;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline-color: #ffffff;
   }
 }
