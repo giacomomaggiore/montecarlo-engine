@@ -99,7 +99,7 @@ export function SimulatorPage() {
   const runDisabled = isBusy || !plan.ok || catalogue === null || !catalogue.ok
 
   return (
-    <section aria-labelledby="engine-heading" className="page-content">
+    <section aria-labelledby="engine-heading" className="engine-page page-content">
       <h1 id="engine-heading">Engine</h1>
 
       {catalogue === null && <p role="status">Loading asset catalogue…</p>}

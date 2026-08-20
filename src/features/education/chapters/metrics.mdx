@@ -1,0 +1,19 @@
+# Portfolio Construction and Risk
+
+A portfolio combines target allocations with contribution, rebalancing, cost, tax, and leverage rules. Risk and return metrics then describe the resulting distribution, not a guarantee about future markets.
+
+## Drawdown
+
+Drawdown measures loss from the prior peak of a unitized return index:
+
+$$
+DD_t = \frac{V_t}{\max_{u \le t} V_u} - 1
+$$
+
+The index excludes external contributions so deposits cannot appear as market recoveries.
+
+## Terminal wealth and IRR
+
+Terminal wealth is the amount remaining after the model's final liquidation. With an initial investment only, CAGR is informative. When contributions occur, IRR incorporates their date and amount instead.
+
+Loss probability compares each path's terminal wealth with that path's total external contributions. It is distinct from economic ruin, which is reserved for an insolvent leveraged path.

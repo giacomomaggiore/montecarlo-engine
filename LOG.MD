@@ -1175,3 +1175,15 @@ The intended Eurostat EA20 HICP endpoint could not be downloaded because TLS cer
 - `npm run test:e2e`: 6 browser tests passed, including the new `QUAL` selection-and-run coverage.
 - `npm test`: 33 files and 272 tests passed.
 - `npm run lint`, `npm run format`, and `npm run build`: passed.
+
+## 2026-08-20 - Educational MDX infrastructure
+
+### Scope completed
+
+- Added build-time MDX, GitHub-flavored Markdown, automatic heading anchors, and KaTeX formula rendering to Vite.
+- Added a chapter manifest, five initial MDX chapter stubs, `/education/:chapterSlug` routes, a responsive documentation sidebar, hash navigation, and browser scroll-spy section highlighting.
+- `/education` now redirects to the Foundations chapter. The Appendix remains the source material for the subsequent full chapter conversion.
+
+### Validation completed
+
+- Production build and focused education-route tests passed before the full quality gate.

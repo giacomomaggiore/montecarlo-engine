@@ -20,8 +20,8 @@ const CASH_FLOW_LABELS: Record<CashFlowMode, string> = {
 
 const REBALANCING_LABELS: Record<RebalancingMode, string> = {
   none: 'None',
-  time: 'Every number of periods',
-  toleranceBand: 'When allocation drift exceeds a band',
+  time: 'Frequency',
+  toleranceBand: 'Tolerance band',
 }
 
 const LEVERAGE_RESET_LABELS: Record<LeverageResetMode, string> = {
@@ -205,7 +205,7 @@ export function PortfolioSettings({
       {inputs.rebalancingMode === 'time' && (
         <div className="labelled-field">
           <label htmlFor="field-rebalancingEveryPeriods">
-            Rebalance every number of periods
+            Frequency
           </label>
           <input
             aria-describedby={describedBy(
@@ -234,7 +234,7 @@ export function PortfolioSettings({
       {inputs.rebalancingMode === 'toleranceBand' && (
         <div className="labelled-field">
           <label htmlFor="field-rebalancingBandPercentagePoints">
-            Drift band (percentage points, strictly beyond)
+            Tolerance band (percentage points, strictly beyond)
           </label>
           <input
             aria-describedby={describedBy(

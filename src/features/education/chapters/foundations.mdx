@@ -1,0 +1,19 @@
+# Financial foundations
+
+Portfolio simulation begins with a precise accounting convention. The engine models periodic, nominal base-currency returns and applies external contributions at the end of each period.
+
+## Simple and log returns
+
+For a total-return price $P_t$, the periodic simple return is:
+
+$$
+r_t = \frac{P_t}{P_{t-1}} - 1
+$$
+
+Portfolio value compounds directly through $V_t = V_{t-1}(1 + r_t)$. Log returns, $\ell_t = \log(1 + r_t)$, add through time and are therefore the quantity modelled by the parametric Student's $t$ engine before it converts back to a simple return.
+
+## Contributions and cash flows
+
+Recurring contributions arrive after market returns for their period. This separates investment performance from savings behavior: a contribution increases wealth, but it is not a return.
+
+For cash-flow portfolios, money-weighted return answers the appropriate question because it respects the amount and timing of the investor's deposits.

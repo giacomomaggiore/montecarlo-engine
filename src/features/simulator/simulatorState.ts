@@ -401,7 +401,7 @@ export function deriveRunPlan(
       errors.push(
         inputError(
           `inputs.weight.${holding.assetId}`,
-          `Enter a non-negative allocation percentage for ${holding.assetId}.`,
+          `Enter non-negative allocation % for ${holding.assetId}.`,
         ),
       )
       continue

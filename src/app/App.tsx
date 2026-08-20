@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { EducationPage } from '../features/education/EducationPage'
 import { ResourcesPage } from '../features/resources/ResourcesPage'
 import { SimulatorPage } from '../features/simulator/SimulatorPage'
@@ -34,7 +34,11 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<SimulatorPage />} />
-          <Route path="/education" element={<EducationPage />} />
+          <Route
+            path="/education"
+            element={<Navigate replace to="/education/foundations" />}
+          />
+          <Route path="/education/:chapterSlug" element={<EducationPage />} />
           <Route path="/resources" element={<ResourcesPage />} />
         </Routes>
       </main>

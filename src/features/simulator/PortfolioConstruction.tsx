@@ -131,7 +131,12 @@ export function PortfolioConstruction({
               return (
                 <tr key={holding.assetId}>
                   <th scope="row">{record?.ticker ?? holding.assetId}</th>
-                  <td>{record?.name ?? 'Unknown asset'}</td>
+                  <td>
+                    {record?.name ?? 'Unknown asset'}
+                    <div className="holding-name-error">
+                      <FieldErrors errors={weightErrors} id={weightErrorId} />
+                    </div>
+                  </td>
                   <td>
                     <label
                       className="visually-hidden"
@@ -156,7 +161,6 @@ export function PortfolioConstruction({
                       }
                       value={holding.weightPercent}
                     />
-                    <FieldErrors errors={weightErrors} id={weightErrorId} />
                   </td>
                   <td>
                     <button
@@ -180,20 +184,18 @@ export function PortfolioConstruction({
         </table>
       )}
 
-      {/* The continuously displayed running total the spec requires — the
-          user watches this converge to 100 while splitting allocations. */}
       <p aria-live="polite" className="allocation-total">
         {hasValidAllocationTotal
-          ? 'total: 100%'
-          : `total: ${formattedTotalPercent}% `}
+          ? 'Total: 100%'
+          : `Total: ${formattedTotalPercent}% `}
         {!hasValidAllocationTotal && (
           <strong className="allocation-warning">(must be 100%)</strong>
         )}
       </p>
       <FieldErrors errors={historyErrors} id="history-errors" />
 
-      <label htmlFor="benchmark-select">Optional benchmark ETF</label>
       <select
+        aria-label="Optional benchmark ETF"
         className="benchmark-select"
         id="benchmark-select"
         onChange={(event) =>
@@ -204,7 +206,7 @@ export function PortfolioConstruction({
         }
         value={benchmarkAssetId ?? ''}
       >
-        <option value="">No benchmark</option>
+        <option value="">[optional] benchmark</option>
         {assets.map((asset) => (
           <option key={asset.assetId} value={asset.assetId}>
             {asset.ticker} - {asset.name}

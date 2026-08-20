@@ -1,0 +1,13 @@
+# Market Data
+
+The simulator uses released, versioned base-currency return data rather than raw price files. Every selected asset, inflation observation, and risk-free rate must refer to the same historical row before it enters a simulation.
+
+## Total-return prices
+
+Periodic asset returns come from adjusted-close or total-return prices, so dividends and splits are already reflected in the return series. Missing observations remain unavailable; the loader selects only jointly finite rows rather than filling a gap with an invented value.
+
+## Currency, inflation, and rates
+
+All accounting uses one base currency. An unhedged foreign asset requires its local return and the corresponding foreign-exchange return; inflation changes real purchasing power, while the matching short rate supports debt interest and excess-return metrics.
+
+Data provenance, release checksums, units, and date ranges are part of every reproducible result.

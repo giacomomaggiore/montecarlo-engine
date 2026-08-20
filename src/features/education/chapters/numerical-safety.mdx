@@ -1,0 +1,19 @@
+# Numerical safety
+
+Financial outputs are only useful when the numerical operations producing them are explicit, validated, and reproducible.
+
+## Positive semidefinite matrices
+
+A covariance matrix used for joint shocks must be positive semidefinite. The engine repairs correlation in correlation space, preserves asset volatilities, and rejects a matrix whose Cholesky factorization remains singular.
+
+$$
+\Sigma = LL^\top
+$$
+
+The factor $L$ turns independent standard-normal shocks into a correlated vector with the required covariance structure.
+
+## Reproducible randomness
+
+The engine uses a seeded `xoshiro128**` pseudo-random generator. A fixed seed, released dataset, model version, and configuration reproduce the same scenario sequence.
+
+This generator is for statistical simulation, not cryptographic security.

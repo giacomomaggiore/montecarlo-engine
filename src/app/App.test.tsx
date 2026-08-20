@@ -67,9 +67,9 @@ describe('App', () => {
   })
 
   it.each([
-    ['/education', 'Educational'],
+    ['/education', 'Financial foundations'],
     ['/resources', 'External Resources'],
-  ])('renders %s', (path, heading) => {
+  ])('renders %s', async (path, heading) => {
     render(
       <MemoryRouter
         future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
@@ -79,6 +79,8 @@ describe('App', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: heading }),
+    ).toBeInTheDocument()
   })
 })

@@ -103,4 +103,4 @@ The visual style is a quiet, text-led digital notebook: minimal, editorial, and 
 - Drop shadows as a primary hierarchy device.
 - Dense sidebars, dashboard widgets, or excessive chrome.
 
-The key principle is: make the content feel authored and durable, while the interface feels almost invisible.
+The key principle is: make the content feel authored and durable, while the interface feels almost invisible.p

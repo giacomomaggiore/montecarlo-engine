@@ -129,8 +129,8 @@ export function SimulationInputs({
     <fieldset className="input-section">
       <legend>Simulation settings</legend>
 
-      <fieldset className="engine-selector">
-        <legend>Simulation engine</legend>
+      <fieldset aria-label="Simulation engine" className="engine-selector">
+        <legend className="visually-hidden">Simulation engine</legend>
         {(Object.keys(ENGINE_LABELS) as EngineChoice[]).map((engine) => (
           <button
             aria-pressed={inputs.engine === engine}
@@ -148,39 +148,41 @@ export function SimulationInputs({
         </button>
       </fieldset>
 
-      <ScalarField
-        dispatch={dispatch}
-        errors={errors}
-        field="seed"
-        hint="Same seed + same settings = exactly the same result."
-        inputs={inputs}
-        label="Random seed"
-      />
-      <ScalarField
-        dispatch={dispatch}
-        errors={errors}
-        field="paths"
-        hint={
-          derivedPeriods !== null && derivedPeriods > 0
-            ? `Up to ${maxSelectablePaths(derivedPeriods)} paths at this horizon (work budget).`
-            : undefined
-        }
-        inputs={inputs}
-        label="Simulated paths"
-      />
-      <ScalarField
-        dispatch={dispatch}
-        errors={errors}
-        field="horizonYears"
-        hint={
-          derivedPeriods !== null && derivedPeriods > 0
-            ? `${derivedPeriods} ${inputs.frequency} periods.`
-            : undefined
-        }
-        inputs={inputs}
-        label="Horizon (years)"
-      />
+      <div className="compact-field-grid compact-field-grid--three">
+        <ScalarField
+          dispatch={dispatch}
+          errors={errors}
+          field="seed"
+          inputs={inputs}
+          label="Random seed"
+        />
+        <ScalarField
+          dispatch={dispatch}
+          errors={errors}
+          field="paths"
+          hint={
+            derivedPeriods !== null && derivedPeriods > 0
+              ? `Up to ${maxSelectablePaths(derivedPeriods)} paths.`
+              : undefined
+          }
+          inputs={inputs}
+          label="Simulated paths"
+        />
+        <ScalarField
+          dispatch={dispatch}
+          errors={errors}
+          field="horizonYears"
+          hint={
+            derivedPeriods !== null && derivedPeriods > 0
+              ? `${derivedPeriods} ${inputs.frequency} periods.`
+              : undefined
+          }
+          inputs={inputs}
+          label="Horizon (years)"
+        />
+      </div>
 
+      <div className="compact-field-grid">
       <fieldset className="radio-group">
         <legend>Data frequency</legend>
         <label>
@@ -234,6 +236,7 @@ export function SimulationInputs({
           </label>
         ))}
       </fieldset>
+      </div>
 
       {inputs.engine === 'bootstrap' && (
         // Read-only common-history summary, per the spec's Bootstrap inputs.
@@ -252,6 +255,7 @@ export function SimulationInputs({
         <fieldset className="input-subsection">
           <legend>Parametric model</legend>
 
+          <div className="compact-field-grid">
           <fieldset className="radio-group">
             <legend>Expected annual returns</legend>
             <label>
@@ -332,7 +336,7 @@ export function SimulationInputs({
                 type="radio"
                 value="automatic"
               />
-              Automatic (estimated from excess kurtosis)
+              Estimated
             </label>
             <label>
               <input
@@ -347,6 +351,7 @@ export function SimulationInputs({
               Manual
             </label>
           </fieldset>
+          </div>
           {inputs.parametric.nuMode === 'manual' && (
             <ParametricField
               dispatch={dispatch}
@@ -358,22 +363,24 @@ export function SimulationInputs({
             />
           )}
 
-          <ParametricField
-            dispatch={dispatch}
-            errorCode="inputs.parametric.inflation"
-            errors={errors}
-            field="annualInflationPercent"
-            label="Annual inflation %"
-            value={inputs.parametric.annualInflationPercent}
-          />
-          <ParametricField
-            dispatch={dispatch}
-            errorCode="inputs.parametric.riskFree"
-            errors={errors}
-            field="annualRiskFreePercent"
-            label="Annual risk-free rate %"
-            value={inputs.parametric.annualRiskFreePercent}
-          />
+          <div className="compact-field-grid">
+            <ParametricField
+              dispatch={dispatch}
+              errorCode="inputs.parametric.inflation"
+              errors={errors}
+              field="annualInflationPercent"
+              label="Annual inflation %"
+              value={inputs.parametric.annualInflationPercent}
+            />
+            <ParametricField
+              dispatch={dispatch}
+              errorCode="inputs.parametric.riskFree"
+              errors={errors}
+              field="annualRiskFreePercent"
+              label="Annual risk-free rate %"
+              value={inputs.parametric.annualRiskFreePercent}
+            />
+          </div>
         </fieldset>
       )}
     </fieldset>

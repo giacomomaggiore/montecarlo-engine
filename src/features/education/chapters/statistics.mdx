@@ -1,0 +1,17 @@
+# Probability and estimation
+
+Monte Carlo estimates a distribution of outcomes conditional on a model. It does not turn historical data into a forecast with certainty.
+
+## Sampling error
+
+For $N$ independent simulated outcomes, the standard error of an estimated mean declines approximately with $1 / \sqrt{N}$. Reducing simulation noise by half therefore requires roughly four times as many paths.
+
+## Correlation and covariance
+
+Covariance records joint movement in return units; correlation standardizes that movement to a scale from $-1$ to $1$.
+
+$$
+\rho_{ij} = \frac{\operatorname{Cov}(r_i, r_j)}{\sigma_i\sigma_j}
+$$
+
+Correlation describes ordinary linear co-movement. It does not by itself guarantee that a model captures joint market stress.

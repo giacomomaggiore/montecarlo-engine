@@ -1,0 +1,19 @@
+# Simulation models
+
+The scenario engine produces one complete period of returns, inflation, and the risk-free rate. Portfolio accounting then applies the same rules regardless of how that scenario was generated.
+
+## Historical joint bootstrap
+
+The bootstrap samples one complete historical row with replacement. Every asset return and macro observation comes from the same sampled date, preserving the contemporaneous dependence observed in history.
+
+It assumes simulated periods are independent. It therefore does not preserve volatility clustering or the duration of historical crises.
+
+## Parametric Student's t engine
+
+The parametric engine fits periodic log returns, then draws correlated shocks with heavier tails than a normal model. It uses one shared scale shock across assets, which makes simultaneous extreme moves more likely than independent per-asset draws.
+
+$$
+\ell = \mu + Lz\sqrt{\frac{\nu}{U}}, \qquad U \sim \chi^2_\nu
+$$
+
+The fitted covariance is converted to the Student's $t$ scale matrix before Cholesky factorization, so simulated volatility matches the calibrated volatility.

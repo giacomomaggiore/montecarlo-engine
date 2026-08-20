@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { DisplayMode } from '../../charts/chartData'
 import type { MetricSummary } from '../../core/portfolio/metrics'
@@ -104,21 +104,18 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
       : 'IRR (money-weighted annual return)'
 
   return (
-    <section aria-labelledby="metrics-heading">
-      <h3 id="metrics-heading">Key metrics</h3>
-      <p className="input-hint">
-        Each metric is a distribution across simulated paths — the headline is
-        the median path, not a promise. Metrics are computed on nominal values.{' '}
-        <Link to="/education">Definitions</Link>
-      </p>
-
+    <section aria-labelledby="metrics-heading" className="result-table-section">
+      <h3 className="result-table-heading" id="metrics-heading">
+        Key metrics
+      </h3>
       {terminalWealth === null && (
         <p role="alert">Terminal wealth: N/A — every simulated path failed.</p>
       )}
 
       <table className="metrics-table">
-        <caption>
-          Distribution across paths (p01 / p10 / median / p90 / p99)
+        <caption className="result-table-subtitle">
+          Each metric is a distribution across simulated paths on nominal
+          values. <Link to="/education">Definitions</Link>
         </caption>
         <thead>
           <tr>
@@ -201,83 +198,79 @@ function MetricsTable({ result }: { readonly result: SimulationResult }) {
         </tbody>
       </table>
 
-      <dl className="probability-list">
-        <dt>Loss probability</dt>
-        <dd>
-          {percent.format(metrics.lossProbability)} of paths ended below the
-          total amount paid in.
-        </dd>
-        <dt>Ruin probability</dt>
-        <dd>
-          {percent.format(metrics.ruinProbability)}
-          {metrics.ruinProbability === 0 &&
-            ' — structurally zero until leverage exists: an unleveraged long-only portfolio cannot go insolvent.'}
-        </dd>
-        {metrics.marginCallProbability != null && (
-          <>
-            <dt>Margin-call incidence</dt>
-            <dd>
-              {percent.format(metrics.marginCallProbability)} of paths had at
-              least one forced deleveraging sale.
-            </dd>
-          </>
-        )}
-      </dl>
-
-      {metrics.benchmark !== null &&
-        result.metadata.benchmarkAssetId !== null && (
-          <section aria-labelledby="benchmark-heading">
-            <h4 id="benchmark-heading">
-              Benchmark comparison: {result.metadata.benchmarkAssetId}
-            </h4>
-            {metrics.benchmark.terminalDifference === null ? (
-              <p>
-                N/A — no path completed with both a portfolio and benchmark
-                terminal value.
-              </p>
-            ) : (
-              <table className="metrics-table">
-                <caption>
-                  Portfolio minus benchmark terminal wealth (nominal)
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">p10</th>
-                    <th scope="col">Median</th>
-                    <th scope="col">p90</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      {currency.format(
-                        metrics.benchmark.terminalDifference.p10,
-                      )}
-                    </td>
-                    <td>
-                      {currency.format(
-                        metrics.benchmark.terminalDifference.p50,
-                      )}
-                    </td>
-                    <td>
-                      {currency.format(
-                        metrics.benchmark.terminalDifference.p90,
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
-            <p className="input-hint">
-              {metrics.benchmark.outperformanceProbability === null
-                ? 'No comparable paths completed.'
-                : `${percent.format(metrics.benchmark.outperformanceProbability)} of ${metrics.benchmark.comparablePathCount} comparable paths outperformed.`}{' '}
-              The benchmark received this portfolio&apos;s realised external
-              contributions on the same simulated dates.
-            </p>
-          </section>
-        )}
     </section>
+  )
+}
+
+function ResultsSummary({ result }: { readonly result: SimulationResult }) {
+  const { metrics } = result
+
+  return (
+    <div className="results-summary-grid">
+        {metrics.benchmark !== null &&
+          result.metadata.benchmarkAssetId !== null && (
+            <section aria-labelledby="benchmark-heading">
+              <h4 id="benchmark-heading">
+                Benchmark comparison: {result.metadata.benchmarkAssetId}
+              </h4>
+              {metrics.benchmark.terminalDifference === null ? (
+                <p>
+                  N/A — no path completed with both a portfolio and benchmark
+                  terminal value.
+                </p>
+              ) : (
+                <table className="metrics-table">
+                  <caption>
+                    Portfolio minus benchmark terminal wealth (nominal)
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">p10</th>
+                      <th scope="col">Median</th>
+                      <th scope="col">p90</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{currency.format(metrics.benchmark.terminalDifference.p10)}</td>
+                      <td>{currency.format(metrics.benchmark.terminalDifference.p50)}</td>
+                      <td>{currency.format(metrics.benchmark.terminalDifference.p90)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+              <p className="input-hint">
+                {metrics.benchmark.outperformanceProbability === null
+                  ? 'No comparable paths completed.'
+                  : `${percent.format(metrics.benchmark.outperformanceProbability)} of ${metrics.benchmark.comparablePathCount} comparable paths outperformed.`}{' '}
+                The benchmark received this portfolio&apos;s realised external
+                contributions on the same simulated dates.
+              </p>
+            </section>
+          )}
+        <dl className="probability-list">
+          <dt>Loss probability</dt>
+          <dd>
+            {percent.format(metrics.lossProbability)} of paths ended below the
+            total amount paid in.
+          </dd>
+          <dt>Ruin probability</dt>
+          <dd>
+            {percent.format(metrics.ruinProbability)}
+            {metrics.ruinProbability === 0 &&
+              ' — structurally zero until leverage exists: an unleveraged long-only portfolio cannot go insolvent.'}
+          </dd>
+          {metrics.marginCallProbability != null && (
+            <>
+              <dt>Margin-call incidence</dt>
+              <dd>
+                {percent.format(metrics.marginCallProbability)} of paths had at
+                least one forced deleveraging sale.
+              </dd>
+            </>
+          )}
+        </dl>
+    </div>
   )
 }
 
@@ -500,6 +493,7 @@ export function ResultsPanel({
   readonly result: SimulationResult
   readonly displayMode: DisplayMode
 }) {
+  const resultsRef = useRef<HTMLElement>(null)
   const { config } = result.metadata
   const periodsPerYear =
     result.metadata.dataset.frequency === 'weekly' ? 52 : 12
@@ -516,8 +510,22 @@ export function ResultsPanel({
     .map(([code, count]) => `${code}: ${count}`)
     .join(', ')
 
+  useEffect(() => {
+    const resultsElement = resultsRef.current
+    if (resultsElement === null) return
+    if (typeof resultsElement.scrollIntoView === 'function') {
+      resultsElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    resultsElement.focus({ preventScroll: true })
+  }, [result])
+
   return (
-    <section aria-labelledby="results-heading" className="results-panel">
+    <section
+      aria-labelledby="results-heading"
+      className="results-panel"
+      ref={resultsRef}
+      tabIndex={-1}
+    >
       <h2 id="results-heading">Results</h2>
 
       {/* The previous-run label the spec requires: this block describes the
@@ -547,41 +555,50 @@ export function ResultsPanel({
 
       {/* The accessible tabular alternative for the chart's essential
           values: which real path each drawn line is, and where it ends. */}
-      <table className="metrics-table">
-        <caption>
-          Chart lines as a table ({displayMode} values): one real simulated path
-          per terminal-wealth percentile
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Percentile (by terminal wealth)</th>
-            <th scope="col">Path #</th>
-            <th scope="col">Terminal wealth</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.representativePaths.map((path) => {
-            const lastIndex = path.values.length - 1
-            const displayedTerminal =
-              displayMode === 'real'
-                ? path.values[lastIndex] / path.priceLevels[lastIndex]
-                : path.values[lastIndex]
-            return (
-              <tr key={path.quantileLevel}>
-                <th scope="row">{formatPercentile(path.quantileLevel)}</th>
-                <td>{path.pathIndex}</td>
-                <td>
-                  {Number.isFinite(displayedTerminal)
-                    ? currency.format(displayedTerminal)
-                    : 'failed'}
-                </td>
+      <div className="results-tables-grid">
+        <MetricsTable result={result} />
+        <section
+          aria-labelledby="terminal-wealth-heading"
+          className="result-table-section terminal-wealth-table"
+        >
+          <h3 className="result-table-heading" id="terminal-wealth-heading">
+            Terminal wealth
+          </h3>
+          <table className="metrics-table">
+            <caption className="result-table-subtitle">
+              Chart lines as a table ({displayMode} values).
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Percentile (by terminal wealth)</th>
+                <th scope="col">Path #</th>
+                <th scope="col">Terminal wealth</th>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
-
-      <MetricsTable result={result} />
+            </thead>
+            <tbody>
+              {result.representativePaths.map((path) => {
+                const lastIndex = path.values.length - 1
+                const displayedTerminal =
+                  displayMode === 'real'
+                    ? path.values[lastIndex] / path.priceLevels[lastIndex]
+                    : path.values[lastIndex]
+                return (
+                  <tr key={path.quantileLevel}>
+                    <th scope="row">{formatPercentile(path.quantileLevel)}</th>
+                    <td>{path.pathIndex}</td>
+                    <td>
+                      {Number.isFinite(displayedTerminal)
+                        ? currency.format(displayedTerminal)
+                        : 'failed'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </section>
+      </div>
+      <ResultsSummary result={result} />
       <PathInspector displayMode={displayMode} result={result} />
       <ExportDownloads result={result} />
     </section>
