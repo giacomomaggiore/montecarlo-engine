@@ -258,7 +258,7 @@ function ResultsSummary({ result }: { readonly result: SimulationResult }) {
           <dd>
             {percent.format(metrics.ruinProbability)}
             {metrics.ruinProbability === 0 &&
-              ' — structurally zero until leverage exists: an unleveraged long-only portfolio cannot go insolvent.'}
+              ' - structurally zero until leverage exists.'}
           </dd>
           {metrics.marginCallProbability != null && (
             <>
@@ -299,10 +299,7 @@ function PathInspector({
   return (
     <section aria-labelledby="path-inspector-heading">
       <h3 id="path-inspector-heading">Inspect an individual path</h3>
-      <p className="input-hint">
-        The first {retained.length} simulated paths keep full period-by-period
-        detail. Each is one equally likely future, not a forecast.
-      </p>
+      
       <label htmlFor="path-inspector-select">Path to inspect</label>
       <select
         id="path-inspector-select"

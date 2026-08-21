@@ -63,7 +63,7 @@ test('runs DCA with transaction costs and capital-gains tax', async ({
   await page
     .getByLabel('Contribution per period (USD, end of period)')
     .fill('100')
-  await page.getByLabel('Fixed cost per executed order (USD)').fill('1')
+  await page.getByLabel('Fixed order cost order (USD)').fill('1')
   await page.getByLabel('Proportional transaction cost (%)').fill('0.1')
   await page.getByLabel('Capital-gains tax rate (%)').fill('20')
 

@@ -233,7 +233,6 @@ export function runSimulation(
     let taxState = initializeTaxState(
       leverage === null ? initialInvestment : sum(holdings),
       weights,
-      config.tax,
     )
     let cumulativeTransactionCosts = 0
     let cumulativeRealizedGainLoss = 0

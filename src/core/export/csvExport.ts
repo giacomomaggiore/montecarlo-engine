@@ -58,7 +58,7 @@ function createRunMetadataCsv(result: SimulationResult): string {
     fixedPerOrder: 0,
     proportionalRate: 0,
   }
-  const tax = config.tax ?? { capitalGainsRate: 0, initialCostBasis: null }
+  const tax = config.tax ?? { capitalGainsRate: 0 }
   const leverage = config.leverage ?? { mode: 'none' as const }
 
   return serializeCsv(
@@ -88,7 +88,6 @@ function createRunMetadataCsv(result: SimulationResult): string {
       'fixed_cost_per_order',
       'proportional_cost_rate',
       'capital_gains_tax_rate',
-      'initial_cost_basis',
       'leverage_mode',
       'target_gross_exposure',
       'maintenance_margin',
@@ -129,7 +128,6 @@ function createRunMetadataCsv(result: SimulationResult): string {
         transactionCosts.fixedPerOrder,
         transactionCosts.proportionalRate,
         tax.capitalGainsRate,
-        tax.initialCostBasis,
         leverage.mode,
         leverage.mode === 'enabled' ? leverage.targetGrossExposure : null,
         leverage.mode === 'enabled' ? leverage.maintenanceMargin : null,

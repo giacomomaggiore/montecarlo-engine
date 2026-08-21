@@ -116,7 +116,7 @@ export function SimulatorPage() {
 
       {catalogue !== null && catalogue.ok && (
         <div className="input-workspace">
-          <div className="input-column">
+          <div className="configuration-columns">
             <PortfolioConstruction
               assets={catalogueAssets}
               benchmarkAssetId={inputs.benchmarkAssetId}
@@ -130,13 +130,19 @@ export function SimulatorPage() {
               errors={inputErrors}
               inputs={inputs}
             />
-          </div>
-          <div className="input-column">
             <PortfolioSettings
               dispatch={dispatch}
               errors={inputErrors}
               inputs={inputs}
             />
+          </div>
+          <div className="engine-controls">
+            <button disabled={runDisabled} onClick={handleRun} type="button">
+              Run
+            </button>
+            <button disabled={!isBusy} onClick={cancel} type="button">
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -144,7 +150,7 @@ export function SimulatorPage() {
       {/* The aria-live validation summary the spec requires, complementing
           the beside-control messages. polite: it re-announces as the user
           types, and must not interrupt their own input echo. */}
-      <div aria-live="polite" className="validation-summary">
+      <div aria-live="polite" className="validation-summary visually-hidden">
         {inputErrors !== null && inputErrors.length > 0 && (
           <>
             <p>Fix the following before running:</p>
@@ -155,15 +161,6 @@ export function SimulatorPage() {
             </ul>
           </>
         )}
-      </div>
-
-      <div className="engine-controls">
-        <button disabled={runDisabled} onClick={handleRun} type="button">
-          Run
-        </button>
-        <button disabled={!isBusy} onClick={cancel} type="button">
-          Cancel
-        </button>
       </div>
 
       <div aria-live="polite">

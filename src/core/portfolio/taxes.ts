@@ -4,7 +4,6 @@ import type { ExecutedPortfolioTrade } from './transactionCosts'
 
 export const ZERO_TAX: TaxConfig = {
   capitalGainsRate: 0,
-  initialCostBasis: null,
 }
 
 export type TaxState = {
@@ -22,11 +21,9 @@ export type TaxSaleResult = {
 export function initializeTaxState(
   initialInvestment: number,
   weights: readonly number[],
-  tax: TaxConfig | undefined,
 ): TaxState {
-  const totalBasis = tax?.initialCostBasis ?? initialInvestment
   return {
-    costBases: weights.map((weight) => totalBasis * weight),
+    costBases: weights.map((weight) => initialInvestment * weight),
     lossCarryforward: 0,
   }
 }

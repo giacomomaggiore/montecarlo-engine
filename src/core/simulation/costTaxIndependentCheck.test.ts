@@ -47,7 +47,7 @@ describe('Phase 7 independent cost and tax check', () => {
         cashFlow: { mode: 'dca', amount: 105 },
         rebalancing: { mode: 'time', everyPeriods: 1 },
         transactionCosts: { fixedPerOrder: 2, proportionalRate: 0.01 },
-        tax: { capitalGainsRate: 0.2, initialCostBasis: null },
+        tax: { capitalGainsRate: 0.2 },
         paths: 1,
         periods: 2,
         seed: 0,

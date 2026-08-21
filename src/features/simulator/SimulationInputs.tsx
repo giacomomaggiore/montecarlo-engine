@@ -126,7 +126,7 @@ export function SimulationInputs({
     : null
 
   return (
-    <fieldset className="input-section">
+    <fieldset className="input-section simulation-settings">
       <legend>Simulation settings</legend>
 
       <fieldset aria-label="Simulation engine" className="engine-selector">
@@ -252,10 +252,10 @@ export function SimulationInputs({
       )}
 
       {inputs.engine === 'studentT' && (
-        <fieldset className="input-subsection">
+        <fieldset className="input-subsection parametric-settings">
           <legend>Parametric model</legend>
 
-          <div className="compact-field-grid">
+          <div className="compact-field-grid parametric-choice-grid">
           <fieldset className="radio-group">
             <legend>Expected annual returns</legend>
             <label>
@@ -363,7 +363,7 @@ export function SimulationInputs({
             />
           )}
 
-          <div className="compact-field-grid">
+          <div className="compact-field-grid parametric-rate-grid">
             <ParametricField
               dispatch={dispatch}
               errorCode="inputs.parametric.inflation"

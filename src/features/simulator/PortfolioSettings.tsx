@@ -59,10 +59,6 @@ export function PortfolioSettings({
     'inputs.transactionCosts.proportionalRate',
   )
   const taxRateErrors = errorsForCode(errors, 'inputs.tax.capitalGainsRate')
-  const initialBasisErrors = errorsForCode(
-    errors,
-    'inputs.tax.initialCostBasis',
-  )
   const leverageErrors = errorsForCode(
     errors,
     'inputs.leverage.targetGrossExposure',
@@ -86,7 +82,7 @@ export function PortfolioSettings({
       : 4
 
   return (
-    <fieldset className="input-section">
+    <fieldset className="input-section portfolio-settings">
       <legend>Portfolio settings</legend>
 
       <div className="labelled-field">
@@ -260,11 +256,11 @@ export function PortfolioSettings({
         </div>
       )}
 
-      <fieldset className="radio-group">
+      <fieldset className="radio-group transaction-costs">
         <legend>Transaction costs and taxes</legend>
         <div className="labelled-field">
           <label htmlFor="field-fixedTransactionCost">
-            Fixed cost per executed order (USD)
+            Fix. order cost (USD)
           </label>
           <input
             aria-describedby={describedBy(
@@ -291,7 +287,7 @@ export function PortfolioSettings({
 
         <div className="labelled-field">
           <label htmlFor="field-proportionalTransactionCostPercent">
-            Proportional transaction cost (%)
+            Var. order cost (%)
           </label>
           <input
             aria-describedby={describedBy(
@@ -318,7 +314,7 @@ export function PortfolioSettings({
 
         <div className="labelled-field">
           <label htmlFor="field-capitalGainsTaxPercent">
-            Capital-gains tax rate (%)
+            Capital-gains tax (%)
           </label>
           <input
             aria-describedby={describedBy(
@@ -343,35 +339,9 @@ export function PortfolioSettings({
           />
         </div>
 
-        <div className="labelled-field">
-          <label htmlFor="field-initialCostBasis">
-            Initial cost basis override (USD, optional)
-          </label>
-          <input
-            aria-describedby={describedBy(
-              'initialCostBasis-errors',
-              initialBasisErrors,
-            )}
-            aria-invalid={initialBasisErrors.length > 0}
-            id="field-initialCostBasis"
-            inputMode="decimal"
-            onChange={(event) =>
-              dispatch({
-                type: 'set-field',
-                field: 'initialCostBasis',
-                value: event.target.value,
-              })
-            }
-            value={inputs.initialCostBasis}
-          />
-          <FieldErrors
-            errors={initialBasisErrors}
-            id="initialCostBasis-errors"
-          />
-        </div>
       </fieldset>
 
-      <fieldset className="radio-group">
+      <fieldset className="radio-group leverage-settings">
         <legend>Leverage</legend>
         <label>
           <input
@@ -397,10 +367,10 @@ export function PortfolioSettings({
         </label>
 
         {inputs.leverageMode === 'enabled' && (
-          <>
+          <div className="leverage-configuration">
             <div className="labelled-field">
               <label htmlFor="field-targetGrossExposure">
-                Target gross exposure (x, maximum {maximumLeverage.toFixed(2)}x)
+                Target gross exposure (max {maximumLeverage.toFixed(2)}x)
               </label>
               <input
                 aria-describedby={describedBy(
@@ -547,11 +517,11 @@ export function PortfolioSettings({
                 boundary.
               </p>
             )}
-          </>
+          </div>
         )}
       </fieldset>
 
-      <fieldset className="radio-group">
+      <fieldset className="radio-group display-mode-options">
         <legend>Value display</legend>
         <label>
           <input
@@ -563,7 +533,7 @@ export function PortfolioSettings({
             type="radio"
             value="nominal"
           />
-          Nominal (as accounted)
+          Nominal 
         </label>
         <label>
           <input
@@ -575,7 +545,7 @@ export function PortfolioSettings({
             type="radio"
             value="real"
           />
-          Real (deflated by each path&apos;s own sampled inflation)
+          Real (simulated inflation)
         </label>
       </fieldset>
     </fieldset>

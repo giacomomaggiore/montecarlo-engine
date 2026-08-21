@@ -82,7 +82,6 @@ export type SimulatorInputs = {
   readonly fixedTransactionCost: string
   readonly proportionalTransactionCostPercent: string
   readonly capitalGainsTaxPercent: string
-  readonly initialCostBasis: string
   readonly leverageMode: LeverageMode
   readonly targetGrossExposure: string
   readonly maintenanceMarginPercent: string
@@ -116,7 +115,6 @@ export const DEFAULT_SIMULATOR_INPUTS: SimulatorInputs = {
   fixedTransactionCost: '0',
   proportionalTransactionCostPercent: '0',
   capitalGainsTaxPercent: '0',
-  initialCostBasis: '',
   leverageMode: 'none',
   targetGrossExposure: '1.5',
   maintenanceMarginPercent: '30',
@@ -147,7 +145,6 @@ export type ScalarInputField =
   | 'fixedTransactionCost'
   | 'proportionalTransactionCostPercent'
   | 'capitalGainsTaxPercent'
-  | 'initialCostBasis'
   | 'targetGrossExposure'
   | 'maintenanceMarginPercent'
   | 'annualBorrowingSpreadPercent'
@@ -619,22 +616,6 @@ export function deriveRunPlan(
       ),
     )
   }
-  const hasInitialCostBasis = inputs.initialCostBasis.trim() !== ''
-  const parsedInitialCostBasis = hasInitialCostBasis
-    ? parseFiniteNumber(inputs.initialCostBasis)
-    : null
-  if (
-    (hasInitialCostBasis && parsedInitialCostBasis === null) ||
-    (parsedInitialCostBasis !== null && parsedInitialCostBasis < 0)
-  ) {
-    errors.push(
-      inputError(
-        'inputs.tax.initialCostBasis',
-        'Initial cost basis must be blank or a non-negative amount.',
-      ),
-    )
-  }
-
   let leverage: LeverageConfig | null = null
   if (inputs.leverageMode === 'none') {
     leverage = { mode: 'none' }
@@ -830,7 +811,6 @@ export function deriveRunPlan(
     },
     tax: {
       capitalGainsRate: (capitalGainsTaxPercent as number) / 100,
-      initialCostBasis: parsedInitialCostBasis,
     },
     leverage: leverage as LeverageConfig,
     paths: paths as number,

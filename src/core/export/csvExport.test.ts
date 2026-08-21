@@ -25,7 +25,7 @@ function fixtureResult(): SimulationResult {
         cashFlow: { mode: 'dca', amount: 100 },
         rebalancing: { mode: 'time', everyPeriods: 2 },
         transactionCosts: { fixedPerOrder: 1, proportionalRate: 0.001 },
-        tax: { capitalGainsRate: 0.2, initialCostBasis: 900 },
+        tax: { capitalGainsRate: 0.2 },
         leverage: {
           mode: 'enabled',
           targetGrossExposure: 2,

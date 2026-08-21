@@ -197,7 +197,6 @@ describe('deriveRunPlan — success', () => {
         fixedTransactionCost: '2.50',
         proportionalTransactionCostPercent: '0.15',
         capitalGainsTaxPercent: '20',
-        initialCostBasis: '8000',
       }),
       CATALOGUE,
     )
@@ -210,7 +209,6 @@ describe('deriveRunPlan — success', () => {
     })
     expect(result.value.config.tax).toEqual({
       capitalGainsRate: 0.2,
-      initialCostBasis: 8000,
     })
   })
 })
@@ -265,7 +263,7 @@ describe('deriveRunPlan — field-addressable failures', () => {
     expect(atCeiling.ok).toBe(true)
   })
 
-  it('addresses invalid cost, tax, and nonnumeric basis fields directly', () => {
+  it('addresses invalid cost and tax fields directly', () => {
     expectSingleErrorCode(
       validInputs({ fixedTransactionCost: '-1' }),
       'inputs.transactionCosts.fixedPerOrder',
@@ -277,10 +275,6 @@ describe('deriveRunPlan — field-addressable failures', () => {
     expectSingleErrorCode(
       validInputs({ capitalGainsTaxPercent: '101' }),
       'inputs.tax.capitalGainsRate',
-    )
-    expectSingleErrorCode(
-      validInputs({ initialCostBasis: 'not-a-number' }),
-      'inputs.tax.initialCostBasis',
     )
   })
 

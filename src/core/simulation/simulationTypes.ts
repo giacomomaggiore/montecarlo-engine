@@ -50,7 +50,6 @@ export type TransactionCostConfig = {
 
 export type TaxConfig = {
   readonly capitalGainsRate: number
-  readonly initialCostBasis: number | null
 }
 
 export type SimulationConfig = {
@@ -370,17 +369,6 @@ function validateTax(
     )
   }
 
-  if (
-    tax.initialCostBasis !== null &&
-    !isFiniteNonNegative(tax.initialCostBasis)
-  ) {
-    errors.push(
-      error(
-        'config.tax.initialCostBasis',
-        'Initial cost basis must be blank or a finite non-negative amount.',
-      ),
-    )
-  }
 }
 
 function validateLeverage(

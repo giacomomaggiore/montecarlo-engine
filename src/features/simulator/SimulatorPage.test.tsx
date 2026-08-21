@@ -100,9 +100,10 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
         name: 'SPY - SPDR S&P 500 ETF Trust',
       }),
     )
+    expect(search).toHaveValue('')
 
     // First holding defaults to 100%, so the plan is immediately valid.
-    expect(screen.getByText('Allocation total: 100.00%')).toBeInTheDocument()
+    expect(screen.getByText('Total: 100%')).toBeInTheDocument()
     const runButton = screen.getByRole('button', { name: 'Run' })
     expect(runButton).toBeEnabled()
 
@@ -117,7 +118,7 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
       cashFlow: { mode: 'lumpSum' },
       rebalancing: { mode: 'none' },
       transactionCosts: { fixedPerOrder: 0, proportionalRate: 0 },
-      tax: { capitalGainsRate: 0, initialCostBasis: null },
+      tax: { capitalGainsRate: 0 },
       leverage: { mode: 'none' },
       paths: 2000,
       periods: 520,
@@ -136,6 +137,7 @@ describe('SimulatorPage — the search -> select -> weight -> run flow', () => {
         name: 'SPY - SPDR S&P 500 ETF Trust',
       }),
     )
+    await user.type(search, 'agg')
     await user.click(
       screen.getByRole('button', {
         name: 'AGG - iShares Core U.S. Aggregate Bond ETF',

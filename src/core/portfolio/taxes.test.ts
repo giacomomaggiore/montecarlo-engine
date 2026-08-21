@@ -6,17 +6,11 @@ import {
 } from './taxes'
 
 describe('average-basis taxes', () => {
-  it('uses the initial investment as basis unless the user overrides it', () => {
-    expect(initializeTaxState(1_000, [0.6, 0.4], undefined)).toEqual({
+  it('uses the initial investment as basis', () => {
+    expect(initializeTaxState(1_000, [0.6, 0.4])).toEqual({
       costBases: [600, 400],
       lossCarryforward: 0,
     })
-    expect(
-      initializeTaxState(1_000, [0.6, 0.4], {
-        capitalGainsRate: 0.2,
-        initialCostBasis: 800,
-      }),
-    ).toEqual({ costBases: [480, 320], lossCarryforward: 0 })
   })
 
   it('adds the gross buy and its fee to average cost basis', () => {
@@ -31,7 +25,7 @@ describe('average-basis taxes', () => {
       { costBases: [100], lossCarryforward: 0 },
       [200],
       [{ assetIndex: 0, value: -50, transactionCost: 2 }],
-      { capitalGainsRate: 0.2, initialCostBasis: null },
+      { capitalGainsRate: 0.2 },
     )
     if (!result.ok) throw new Error('expected valid sale')
 
@@ -54,7 +48,7 @@ describe('average-basis taxes', () => {
         { assetIndex: 0, value: -50, transactionCost: 0 },
         { assetIndex: 1, value: -50, transactionCost: 0 },
       ],
-      { capitalGainsRate: 0.2, initialCostBasis: null },
+      { capitalGainsRate: 0.2 },
     )
     if (!result.ok) throw new Error('expected valid sales')
 

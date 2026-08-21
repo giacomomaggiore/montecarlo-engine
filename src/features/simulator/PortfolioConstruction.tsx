@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { AssetCatalogueRecord } from '../../core/data/assetCatalogue'
 import { MAX_ASSET_COUNT } from '../../core/simulation/simulationTypes'
 import type { ValidationError } from '../../core/validation'
-import { describedBy, errorsForCode } from './simulatorState'
+import { errorsForCode } from './simulatorState'
 import type { HoldingInput, SimulatorInputsAction } from './simulatorState'
 import { FieldErrors } from './FieldErrors'
 
@@ -62,7 +62,7 @@ export function PortfolioConstruction({
   const historyErrors = errorsForCode(errors, 'inputs.history.insufficient')
 
   return (
-    <fieldset className="input-section">
+    <fieldset className="input-section portfolio-construction">
       <legend>Portfolio construction</legend>
 
       <input
@@ -80,9 +80,10 @@ export function PortfolioConstruction({
             <li key={asset.assetId}>
               <button
                 disabled={atHoldingLimit}
-                onClick={() =>
+                onClick={() => {
                   dispatch({ type: 'add-holding', assetId: asset.assetId })
-                }
+                  setQuery('')
+                }}
                 type="button"
               >
                 {asset.ticker} - {asset.name}
@@ -112,7 +113,7 @@ export function PortfolioConstruction({
             <tr>
               <th scope="col">Ticker</th>
               <th scope="col">Name</th>
-              <th scope="col">Allocation %</th>
+              <th scope="col">%</th>
               <th scope="col">
                 <span className="visually-hidden">Remove</span>
               </th>
@@ -127,16 +128,20 @@ export function PortfolioConstruction({
                 errors,
                 `inputs.weight.${holding.assetId}`,
               )
-              const weightErrorId = `weight-errors-${holding.assetId}`
+              const allocationPercent = Number(holding.weightPercent)
+              const hasNonPositiveAllocation =
+                Number.isFinite(allocationPercent) && allocationPercent <= 0
               return (
-                <tr key={holding.assetId}>
+                <tr
+                  className={
+                    hasNonPositiveAllocation
+                      ? 'holding-row--non-positive'
+                      : undefined
+                  }
+                  key={holding.assetId}
+                >
                   <th scope="row">{record?.ticker ?? holding.assetId}</th>
-                  <td>
-                    {record?.name ?? 'Unknown asset'}
-                    <div className="holding-name-error">
-                      <FieldErrors errors={weightErrors} id={weightErrorId} />
-                    </div>
-                  </td>
+                  <td>{record?.name ?? 'Unknown asset'}</td>
                   <td>
                     <label
                       className="visually-hidden"
@@ -145,10 +150,6 @@ export function PortfolioConstruction({
                       Allocation percent for {holding.assetId}
                     </label>
                     <input
-                      aria-describedby={describedBy(
-                        weightErrorId,
-                        weightErrors,
-                      )}
                       aria-invalid={weightErrors.length > 0}
                       id={`weight-${holding.assetId}`}
                       inputMode="decimal"
